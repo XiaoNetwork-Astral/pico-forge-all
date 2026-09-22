@@ -18,7 +18,7 @@ This is an independent fork of [PicoForge](https://github.com/librekeys/picoforg
 
 Download the **Windows x64 portable package** from [Releases](https://github.com/XiaoNetwork-Astral/pico-forge-all/releases/latest), extract it and run `picoforge.exe`. For Linux and macOS, see [building from source](docs/Building.md).
 
-Firmware operations need [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases) on PATH, or a `PICOTOOL` environment variable pointing to the executable. No Python runtime is required by PicoForge All.
+The Windows package includes picotool for firmware operations. Source builds use [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases) from PATH or `PICOTOOL`.
 
 ## Usage
 

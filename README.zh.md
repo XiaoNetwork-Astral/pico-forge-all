@@ -18,7 +18,7 @@
 
 从 [Releases](https://github.com/XiaoNetwork-Astral/pico-forge-all/releases/latest) 下载 **Windows x64 便携包**，解压后运行 `picoforge.exe`；Linux 和 macOS 用户可参考[源码构建说明](docs/Building.md)
 
-固件功能需要安装 [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases)，将其加入 PATH，或通过 `PICOTOOL` 环境变量指定可执行文件；PicoForge All 本身不需要 Python
+Windows 便携包已内置 picotool；从源码构建时，需将 [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases) 加入 PATH，或通过 `PICOTOOL` 指定路径
 
 ## 使用
 

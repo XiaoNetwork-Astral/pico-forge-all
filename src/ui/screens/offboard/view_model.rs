@@ -64,7 +64,7 @@ impl OffboardViewModel {
                 cx.new(|cx| {
                     let mut input = InputState::new(window, cx).localized_placeholder(
                         if i == 0 {
-                            crate::i18n::tr("PICOTOOL / PATH, or choose executable")
+                            crate::i18n::tr("Automatic (or choose picotool)")
                         } else {
                             crate::i18n::tr(FIELDS[i])
                         },

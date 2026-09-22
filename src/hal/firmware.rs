@@ -235,9 +235,13 @@ impl Worker {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000);
         }
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Cannot start picotool: {e}"))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "picotool not found. Select its executable in Firmware.".to_owned()
+            } else {
+                format!("Cannot start picotool: {e}")
+            }
+        })?;
         let tx = self.log.clone();
         let out = child.stdout.take().ok_or("Missing process output")?;
         let err = child.stderr.take().ok_or("Missing process error output")?;
@@ -284,7 +288,7 @@ impl Worker {
                 "No device detected in update mode.".into()
             } else {
                 format!(
-                    "picotool failed with exit code {}. Enable Raw output for details.",
+                    "picotool failed (exit code {})",
                     status.code().unwrap_or(-1)
                 )
             });
@@ -455,17 +459,40 @@ fn management(serial: &str, command: &[u8]) -> Result<Vec<u8>, String> {
     }
     Ok(data[..data.len() - 2].to_vec())
 }
+fn choose_picotool(requested: &str, configured: Option<&str>, executable: Option<&Path>) -> String {
+    if !requested.trim().is_empty() {
+        return requested.to_owned();
+    }
+    if let Some(configured) = configured.filter(|path| !path.trim().is_empty()) {
+        return configured.to_owned();
+    }
+    if let Some(executable) = executable {
+        let name = if cfg!(windows) {
+            "picotool.exe"
+        } else {
+            "picotool"
+        };
+        let companion = executable.with_file_name(name);
+        if companion.is_file() {
+            return companion.to_string_lossy().into_owned();
+        }
+    }
+    "picotool".into()
+}
+
+fn resolve_picotool(requested: &str) -> String {
+    let configured = std::env::var("PICOTOOL").ok();
+    let executable = std::env::current_exe().ok();
+    choose_picotool(requested, configured.as_deref(), executable.as_deref())
+}
+
 pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
     let _guard = super::transport::pcsc::lock_device().map_err(|e| e.to_string())?;
     let action = request.action.as_str();
     if !matches!(action, "image" | "inspect" | "sign" | "scan") && !serial_valid(&request.serial) {
         return Err("Choose a board or enter its 16-digit serial.".into());
     }
-    let tool = if request.picotool.trim().is_empty() {
-        std::env::var("PICOTOOL").unwrap_or_else(|_| "picotool".into())
-    } else {
-        request.picotool.clone()
-    };
+    let tool = resolve_picotool(&request.picotool);
     let w = Worker {
         tool,
         serial: request.serial.to_uppercase(),
@@ -625,6 +652,45 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bundled_picotool_is_selected_unless_overridden() {
+        let base = std::env::temp_dir().join(format!(
+            "picoforge-picotool-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&base).unwrap();
+        let executable = base.join("picoforge.exe");
+        let name = if cfg!(windows) {
+            "picotool.exe"
+        } else {
+            "picotool"
+        };
+        let companion = base.join(name);
+        fs::write(&companion, b"").unwrap();
+        assert_eq!(
+            choose_picotool("", None, Some(&executable)),
+            companion.to_string_lossy().into_owned()
+        );
+        assert_eq!(
+            choose_picotool("", Some("custom-picotool"), Some(&executable)),
+            "custom-picotool"
+        );
+        assert_eq!(
+            choose_picotool(
+                "selected-picotool",
+                Some("custom-picotool"),
+                Some(&executable)
+            ),
+            "selected-picotool"
+        );
+        fs::remove_file(companion).unwrap();
+        assert_eq!(choose_picotool("", None, Some(&executable)), "picotool");
+        fs::remove_dir(base).unwrap();
+    }
     fn metadata(signature: &str) -> String {
         format!("Metadata Block 0\n image type: ARM Secure\n target chip: RP2350\n{signature}")
     }

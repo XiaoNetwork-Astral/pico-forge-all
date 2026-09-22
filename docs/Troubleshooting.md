@@ -8,7 +8,7 @@ An **Online · FIDO** connection exposes only FIDO features. PIV, OpenPGP, HSM a
 
 ## Firmware tools unavailable
 
-Install Raspberry Pi picotool 2.3.1 or later and put it on PATH, or set `PICOTOOL` to its full path before starting PicoForge All. Use one RP2350 ARM UF2 image for signing. A board with Secure Boot enabled requires its original trusted signing key.
+The Windows portable package includes picotool. For source builds, install picotool 2.3.1+ on PATH or set `PICOTOOL` to its full path. Use one RP2350 ARM UF2 image for signing. A board with Secure Boot enabled requires its original trusted signing key.
 
 ## Button confirmation timed out
 

@@ -12,11 +12,11 @@ A desktop companion for **[Pico All](https://github.com/XiaoNetwork-Astral/pico-
 - Configure status lights, sign firmware locally and install verified updates
 - English and Simplified Chinese, with searchable IANA time zones
 
-This is an independent fork of [PicoForge](https://github.com/librekeys/picoforge). Report issues [here](https://github.com/BlueFunny19/picoforge-all/issues). Existing RS-Key and pico-fido support is retained; available features depend on the connected firmware.
+This is an independent fork of [PicoForge](https://github.com/librekeys/picoforge). Report issues [here](https://github.com/XiaoNetwork-Astral/pico-forge-all/issues). Existing RS-Key and pico-fido support is retained; available features depend on the connected firmware.
 
 ## Download and install
 
-Download the **Windows x64 portable package** from [Releases](https://github.com/BlueFunny19/picoforge-all/releases/latest), extract it and run `picoforge.exe`. For Linux and macOS, see [building from source](docs/Building.md).
+Download the **Windows x64 portable package** from [Releases](https://github.com/XiaoNetwork-Astral/pico-forge-all/releases/latest), extract it and run `picoforge.exe`. For Linux and macOS, see [building from source](docs/Building.md).
 
 Firmware operations need [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases) on PATH, or a `PICOTOOL` environment variable pointing to the executable. No Python runtime is required by PicoForge All.
 
@@ -36,8 +36,8 @@ A device with Secure Boot enabled needs firmware signed with its original truste
 Requires current stable Rust and the platform libraries listed in [Building](docs/Building.md).
 
 ```sh
-git clone https://github.com/BlueFunny19/picoforge-all.git
-cd picoforge-all
+git clone https://github.com/XiaoNetwork-Astral/pico-forge-all.git
+cd pico-forge-all
 cargo build --release --locked
 ```
 

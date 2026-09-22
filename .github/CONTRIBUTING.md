@@ -1,6 +1,6 @@
 # Contributing to PicoForge All
 
-This is an unofficial fork. Send bug reports and pull requests to [BlueFunny19/picoforge-all](https://github.com/BlueFunny19/picoforge-all), not to upstream PicoForge.
+This is an unofficial fork. Send bug reports and pull requests to [XiaoNetwork-Astral/pico-forge-all](https://github.com/XiaoNetwork-Astral/pico-forge-all), not to upstream PicoForge.
 
 First off, thank you for considering contributing to PicoForge! It's contributors like you that help make this project better for everyone. We deeply appreciate your time, effort, and interest in improving the tool.
 
@@ -27,7 +27,7 @@ The fork is hosted on GitHub.
 
 | Platform                      | URL                                              | Purpose                           |
 | :---------------------------- | :----------------------------------------------- | :-------------------------------- |
-| **GitHub (Primary Source)**   | `https://github.com/BlueFunny19/picoforge-all.git`     | Required for Contribution Forking |
+| **GitHub (Primary Source)**   | `https://github.com/XiaoNetwork-Astral/pico-forge-all.git`     | Required for Contribution Forking |
 
 
 
@@ -72,8 +72,8 @@ The fork is hosted on GitHub.
 ## 6. Communication Channels (Discuss Before Contributing)
 
 Matrix is our most preferred option for direct communication, followed by Discord.
-- **Discussions**: [GitHub Discussions](https://github.com/BlueFunny19/picoforge-all/discussions)
-- **Issues**: [GitHub Issues](https://github.com/BlueFunny19/picoforge-all/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/XiaoNetwork-Astral/pico-forge-all/discussions)
+- **Issues**: [GitHub Issues](https://github.com/XiaoNetwork-Astral/pico-forge-all/issues)
 
 ## 7. Code of Conduct
 

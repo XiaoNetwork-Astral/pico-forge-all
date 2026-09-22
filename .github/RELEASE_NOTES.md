@@ -8,7 +8,7 @@ Updates:
 - Added local UF2 signing and verified updates, with a concise console, log-level filtering and automatic scrolling
 - Added calendar event times, one-confirmation Audit verification, and per-status colour, light level and breathing/steady controls
 
-This release includes a Windows x64 portable package; Linux and macOS users can [build from source](https://github.com/BlueFunny19/picoforge-all/blob/v0.10.0/docs/Building.md). PicoForge All is an independent fork; please report issues to this repository.
+This release includes a Windows x64 portable package; Linux and macOS users can [build from source](https://github.com/XiaoNetwork-Astral/pico-forge-all/blob/v0.10.0/docs/Building.md). PicoForge All is an independent fork; please report issues to this repository.
 
 ---
 
@@ -22,4 +22,4 @@ This release includes a Windows x64 portable package; Linux and macOS users can 
 - 新增本地 UF2 签名与校验更新；控制台精简输出，支持日志等级筛选并自动滚动到最新消息
 - 新增事件日历时间、一次确认的审计验证，以及各状态灯的颜色、亮度等级和呼吸／常亮设置
 
-本次提供 Windows x64 便携包；Linux 和 macOS 用户可[从源码构建](https://github.com/BlueFunny19/picoforge-all/blob/v0.10.0/docs/Building.md)；PicoForge All 为独立分支，问题请反馈至本仓库
+本次提供 Windows x64 便携包；Linux 和 macOS 用户可[从源码构建](https://github.com/XiaoNetwork-Astral/pico-forge-all/blob/v0.10.0/docs/Building.md)；PicoForge All 为独立分支，问题请反馈至本仓库

@@ -22,4 +22,4 @@ Enable device clock synchronization under Software → Settings, then reconnect 
 
 FIDO has no factory PIN. Other applets only fill a default when the device confirms it is unchanged. A reset code must be set before it can unblock OpenPGP; the admin PIN is a separate recovery option. Avoid repeated guesses because they consume retry attempts.
 
-Include your application version, firmware version and relevant console errors in an [issue](https://github.com/BlueFunny19/picoforge-all/issues). Do not attach secrets.
+Include your application version, firmware version and relevant console errors in an [issue](https://github.com/XiaoNetwork-Astral/pico-forge-all/issues). Do not attach secrets.

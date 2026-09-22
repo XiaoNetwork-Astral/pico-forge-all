@@ -69,7 +69,7 @@ impl Render for AboutViewModel {
                                                             .child(crate::i18n::tr("GitHub")),
                                                     )
                                                     .on_click(|_, _, cx| {
-                                                        cx.open_url("https://github.com/BlueFunny19/picoforge-all")
+                                                        cx.open_url("https://github.com/XiaoNetwork-Astral/pico-forge-all")
                                                     }),
                                             )
                                             .child(
@@ -88,7 +88,7 @@ impl Render for AboutViewModel {
                                                     )
                                                     .on_click(|_, _, cx| {
                                                         cx.open_url(
-                                                            "https://github.com/BlueFunny19/picoforge-all/wiki",
+                                                            "https://github.com/XiaoNetwork-Astral/pico-forge-all/wiki",
                                                         )
                                                     }),
                                             ),

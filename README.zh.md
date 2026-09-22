@@ -12,11 +12,11 @@
 - 配置状态灯、本地签名固件及校验更新
 - 支持英语、简体中文和可搜索的 IANA 时区列表
 
-这是 [PicoForge](https://github.com/librekeys/picoforge) 的独立分支，问题请反馈至[本仓库](https://github.com/BlueFunny19/picoforge-all/issues)；保留对 RS-Key 和 pico-fido 的支持，具体功能取决于设备固件
+这是 [PicoForge](https://github.com/librekeys/picoforge) 的独立分支，问题请反馈至[本仓库](https://github.com/XiaoNetwork-Astral/pico-forge-all/issues)；保留对 RS-Key 和 pico-fido 的支持，具体功能取决于设备固件
 
 ## 下载与安装
 
-从 [Releases](https://github.com/BlueFunny19/picoforge-all/releases/latest) 下载 **Windows x64 便携包**，解压后运行 `picoforge.exe`；Linux 和 macOS 用户可参考[源码构建说明](docs/Building.md)
+从 [Releases](https://github.com/XiaoNetwork-Astral/pico-forge-all/releases/latest) 下载 **Windows x64 便携包**，解压后运行 `picoforge.exe`；Linux 和 macOS 用户可参考[源码构建说明](docs/Building.md)
 
 固件功能需要安装 [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases)，将其加入 PATH，或通过 `PICOTOOL` 环境变量指定可执行文件；PicoForge All 本身不需要 Python
 
@@ -36,8 +36,8 @@
 需要当前稳定版 Rust 和对应平台的依赖，详见[构建说明](docs/Building.md)
 
 ```sh
-git clone https://github.com/BlueFunny19/picoforge-all.git
-cd picoforge-all
+git clone https://github.com/XiaoNetwork-Astral/pico-forge-all.git
+cd pico-forge-all
 cargo build --release --locked
 ```
 

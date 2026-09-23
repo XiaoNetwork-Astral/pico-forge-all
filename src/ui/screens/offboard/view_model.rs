@@ -2,7 +2,7 @@
 use crate::hal::firmware::{self, Request};
 use crate::i18n::LocalizedPlaceholder;
 use crate::ui::app::AppModels;
-use crate::ui::components::form::{LabeledU8, select_state};
+use crate::ui::components::form::{FormErrors, LabeledU8, select_state};
 use crate::ui::models::device::DeviceRepo;
 use gpui::*;
 use gpui_component::{
@@ -335,19 +335,8 @@ impl OffboardViewModel {
             &[format!("{}", verb), format!("{}", request.serial)],
         );
         let warning = match request.action.as_str() {
-            "flash"
-                if self
-                    .selection
-                    .image
-                    .as_ref()
-                    .is_some_and(|image| image.nuke) =>
-            {
-                crate::i18n::tr(
-                    "Nuke permanently erases all firmware, keys, PINs and settings. Hardware security locks remain.",
-                )
-            }
             "flash" => crate::i18n::tr(
-                "Firmware updates may erase stored keys, PINs and settings. Back up any data you need before continuing.",
+                "Flashing firmware may erase your data. Back up anything you need before continuing.",
             ),
             "prepare" => crate::i18n::tr(
                 "This erases all application credentials, PINs and settings. Firmware and permanent hardware locks are retained.",
@@ -363,18 +352,23 @@ impl OffboardViewModel {
                 "Confirm device operation"
             });
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(phrase.clone()));
+        let errors = FormErrors::default();
+        errors.watch(0, &input, window, cx);
         let weak = cx.entity().downgrade();
         let submit = std::rc::Rc::new({
             let input = input.clone();
             let phrase = phrase.clone();
+            let errors = errors.clone();
             move |w: &mut Window, cx: &mut App| {
                 let value = input.read(cx).text().to_string();
                 if value != phrase {
-                    let _ = weak.update(cx, |_, cx| {
-                        cx.emit(OffboardEvent::Notification(
-                            crate::i18n::tr("Enter the exact confirmation phrase").into(),
-                        ))
-                    });
+                    errors.set(
+                        0,
+                        crate::i18n::tr(
+                            "Confirmation text does not match. Enter the phrase shown above.",
+                        ),
+                    );
+                    w.refresh();
                     return;
                 }
                 let mut request = request.clone();
@@ -389,6 +383,27 @@ impl OffboardViewModel {
         window.open_dialog(cx, move |dialog, _, _| {
             let submit = submit.clone();
             let ok = submit.clone();
+            let prompt = crate::i18n::format("Type {0} to continue", &[phrase.clone()]);
+            let highlights = prompt.find(&phrase).map(|start| {
+                (
+                    start..start + phrase.len(),
+                    HighlightStyle {
+                        color: Some(rgb(0x67e8f9).into()),
+                        font_weight: Some(FontWeight::BOLD),
+                        ..Default::default()
+                    },
+                )
+            });
+            let mut editor = Input::new(&input);
+            let mut field = v_flex().gap_2();
+            let error = errors.message(0);
+            if error.is_some() {
+                editor = editor.border_color(rgb(0xef4444));
+            }
+            field = field.child(editor);
+            if let Some(error) = error {
+                field = field.child(div().text_sm().text_color(rgb(0xef4444)).child(error));
+            }
             dialog
                 .title(crate::i18n::tr("Confirm device operation"))
                 .border_1()
@@ -401,16 +416,8 @@ impl OffboardViewModel {
                             warning,
                             true,
                         ))
-                        .child(
-                            div()
-                                .text_color(rgb(0x67e8f9))
-                                .font_weight(FontWeight::BOLD)
-                                .child(crate::i18n::format(
-                                    "Type {0} to continue",
-                                    &[format!("{}", phrase)],
-                                )),
-                        )
-                        .child(Input::new(&input)),
+                        .child(div().child(StyledText::new(prompt).with_highlights(highlights)))
+                        .child(field),
                 )
                 .on_ok(move |_, w, cx| {
                     ok(w, cx);

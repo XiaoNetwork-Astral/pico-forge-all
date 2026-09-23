@@ -51,7 +51,7 @@ fn update_request_runs_once_and_waits_through_usb_reenumeration() {
         || probe(replies.pop_front().expect("unexpected probe")),
         || {
             requests.set(requests.get() + 1);
-            Ok(())
+            Ok(Duration::ZERO)
         },
         Duration::from_secs(1),
         Duration::ZERO,
@@ -114,12 +114,51 @@ fn rejected_confirmation_and_transition_timeout_are_reported() {
     let error = enter_update_mode(
         SERIAL,
         || probe(absent(SERIAL)),
-        || Ok(()),
+        || Ok(Duration::ZERO),
         Duration::ZERO,
         Duration::ZERO,
     )
     .unwrap_err();
     assert_eq!(error, "The selected board did not enter update mode.");
+}
+
+#[test]
+fn interrupted_driver_preserves_the_configured_confirmation_window() {
+    let seconds = Duration::from_secs;
+    for (config, expected) in [
+        (vec![], 60),
+        (vec![8, 1, 0], 60),
+        (vec![8, 1, 60], 60),
+        (vec![6, 2, 0, 0, 8, 1, 120], 120),
+        (vec![8, 1, 255], 255),
+    ] {
+        let window = confirmation_timeout(&config).unwrap();
+        assert_eq!(window, seconds(expected));
+        let remaining = confirmation_time_left(window, seconds(3), false);
+        assert_eq!(remaining, seconds(expected - 3));
+        assert_eq!(
+            confirmation_time_left(window, seconds(3), true),
+            Duration::ZERO
+        );
+    }
+    assert_eq!(
+        confirmation_time_left(seconds(60), seconds(70), false),
+        Duration::ZERO
+    );
+    for invalid in [vec![8], vec![8, 1], vec![8, 0], vec![8, 2, 60, 0]] {
+        assert!(confirmation_timeout(&invalid).is_err());
+    }
+
+    let mut replies = VecDeque::from([absent(SERIAL), absent(SERIAL), ready(SERIAL)]);
+    enter_update_mode(
+        SERIAL,
+        || probe(replies.pop_front().expect("unexpected probe")),
+        || Ok(confirmation_time_left(seconds(60), seconds(3), false)),
+        Duration::ZERO, // Enumeration budget expired; confirmation is still pending.
+        Duration::ZERO,
+    )
+    .unwrap();
+    assert!(replies.is_empty());
 }
 
 #[test]

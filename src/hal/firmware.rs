@@ -224,6 +224,35 @@ fn update_command(nuke: bool) -> [u8; 5] {
     [0x80, 0x1f, if nuke { 2 } else { 1 }, 0, 0]
 }
 
+fn confirmation_timeout(config: &[u8]) -> Result<Duration, String> {
+    let invalid = "Could not read the device's button-confirmation timeout.";
+    let mut remaining = config;
+    let mut seconds = 60;
+    while !remaining.is_empty() {
+        if remaining.len() < 2 || remaining.len() < 2 + remaining[1] as usize {
+            return Err(invalid.into());
+        }
+        let (field, rest) = remaining.split_at(2 + remaining[1] as usize);
+        if field[0] == super::rescue::constants::PhyTag::PresenceTimeout as u8 {
+            if field[1] != 1 {
+                return Err(invalid.into());
+            }
+            // Rescue always requires presence; zero selects the firmware default.
+            seconds = if field[2] == 0 { 60 } else { field[2] as u64 };
+        }
+        remaining = rest;
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
+fn confirmation_time_left(timeout: Duration, elapsed: Duration, acknowledged: bool) -> Duration {
+    if acknowledged {
+        Duration::ZERO
+    } else {
+        timeout.saturating_sub(elapsed)
+    }
+}
+
 /// Keep process diagnostics intact until device-state handling has finished.
 #[derive(Debug)]
 enum PicotoolError {
@@ -315,16 +344,17 @@ fn parse_bootsel(
 fn enter_update_mode(
     serial: &str,
     mut probe: impl FnMut() -> Result<Vec<String>, String>,
-    request_update: impl FnOnce() -> Result<(), String>,
+    request_update: impl FnOnce() -> Result<Duration, String>,
     timeout: Duration,
     poll_interval: Duration,
 ) -> Result<(), String> {
     if probe()? == [serial] {
         return Ok(());
     }
-    request_update()?;
-    // Button confirmation happens in request_update; allow a separate window
-    // for USB re-enumeration after the user confirms.
+    let remaining_confirmation = request_update()?;
+    // A transport interruption can return before the firmware's button wait
+    // finishes. Preserve that remaining window before allowing USB enumeration.
+    let timeout = remaining_confirmation + timeout;
     let started = Instant::now();
     loop {
         if probe()? == [serial] {
@@ -440,16 +470,19 @@ impl Worker {
             &self.serial,
             || self.bootsel(),
             || {
+                let config = management(&self.serial, &[0x80, 0x1e, 1, 0, 0])?;
+                let confirmation = confirmation_timeout(&config)?;
                 self.log(
-                    "INFO",
+                    if nuke { "WARN" } else { "INFO" },
                     if nuke {
-                        "Nuke selected: press the board button while its light breathes red."
+                        "Nuke erase confirmation: while the light breathes red, press and release the device button (BOOTSEL)."
                     } else {
                         "When the light flashes, press and release the device button (BOOTSEL)."
                     },
                 );
-                management(&self.serial, &update_command(nuke))
-                    .map(|_| ())
+                let started = Instant::now();
+                management_response(&self.serial, &update_command(nuke))
+                    .map(|reply| confirmation_time_left(confirmation, started.elapsed(), reply.is_some()))
                     .map_err(|error| {
                         if nuke && ["(6B00)", "(6A86)", "(6D00)"].iter().any(|code| error.contains(code)) {
                             "The installed firmware does not support Nuke confirmation lights. Update Pico All first.".into()
@@ -513,6 +546,12 @@ fn normal_cards() -> Result<Vec<(String, pcsc::Card)>, String> {
     Ok(found)
 }
 fn management(serial: &str, command: &[u8]) -> Result<Vec<u8>, String> {
+    management_response(serial, command).map(Option::unwrap_or_default)
+}
+
+// None means the driver interrupted a reboot request, not that the firmware
+// acknowledged it. Only observation of the selected device confirms transition.
+fn management_response(serial: &str, command: &[u8]) -> Result<Option<Vec<u8>>, String> {
     let mut matches: Vec<_> = normal_cards()?
         .into_iter()
         .filter(|(s, _)| s == serial)
@@ -531,7 +570,7 @@ fn management(serial: &str, command: &[u8]) -> Result<Vec<u8>, String> {
     }));
     let data = match response {
         Ok(Ok(data)) => data,
-        Ok(Err(_)) | Err(_) if transition => return Ok(vec![]),
+        Ok(Err(_)) | Err(_) if transition => return Ok(None),
         Ok(Err(e)) => return Err(e.to_string()),
         Err(_) => return Err("The smart-card driver returned an unexpected error.".into()),
     };
@@ -541,7 +580,7 @@ fn management(serial: &str, command: &[u8]) -> Result<Vec<u8>, String> {
             hex::encode_upper(&data)
         ));
     }
-    Ok(data[..data.len() - 2].to_vec())
+    Ok(Some(data[..data.len() - 2].to_vec()))
 }
 fn choose_picotool(requested: &str, configured: Option<&str>, executable: Option<&Path>) -> String {
     if !requested.trim().is_empty() {

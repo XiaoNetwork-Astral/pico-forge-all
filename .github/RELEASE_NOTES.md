@@ -1,6 +1,6 @@
 Updates:
 
-- Bundled picotool in the Windows x64 package and fixed firmware update-mode detection
+- Bundled picotool in the Windows x64 package and fixed firmware update-mode detection and premature timeouts
 - Fixed signing and inspection triggering update mode; improved firmware validation and update confirmation
 - Added Pico All management for PIV, OpenPGP, SmartCard-HSM and Audit
 - Added searchable key, object, slot and security-event lists; HSM objects accept text or files and receive IDs automatically
@@ -11,7 +11,7 @@ Updates:
 
 更新内容：
 
-- Windows x64 便携包内置 picotool，修复固件检查及更新模式切换失败
+- Windows x64 便携包内置 picotool，修复固件检查、更新模式切换失败及提前超时
 - 修复签名和检查意外触发更新模式，改进固件校验和刷写确认
 - 新增 Pico All 的 PIV、OpenPGP、SmartCard-HSM 和审计管理
 - 密钥、对象、槽位和安全事件可搜索；HSM 对象支持文本或文件导入，ID 自动分配

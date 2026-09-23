@@ -208,7 +208,7 @@ fn validate_flash(request: &Request, current: &Assessment) -> Result<(), String>
     if !current.allowed {
         return Err("FLASH disabled: signing key is not trusted by this board.".into());
     }
-    if request.phrase != format!("FLASH {}", current.serial) {
+    if request.serial != current.serial || request.phrase != format!("FLASH {}", current.serial) {
         return Err("Confirm the target before flashing.".into());
     }
     if current.mismatch && !request.mismatch_accepted {
@@ -218,6 +218,19 @@ fn validate_flash(request: &Request, current: &Assessment) -> Result<(), String>
         return Err("Device or firmware changed. Inspect compatibility again.".into());
     }
     Ok(())
+}
+
+fn reviewed_flash(request: &Request, image_hash: &str) -> Result<Assessment, String> {
+    let reviewed: Assessment = request
+        .review
+        .clone()
+        .and_then(|review| serde_json::from_value(review).ok())
+        .ok_or("Device or firmware changed. Inspect compatibility again.")?;
+    validate_flash(request, &reviewed)?;
+    if reviewed.image.hash != image_hash {
+        return Err("Firmware changed during verification.".into());
+    }
+    Ok(reviewed)
 }
 
 fn update_command(nuke: bool) -> [u8; 5] {
@@ -712,18 +725,19 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
             let _ = fs::remove_file(tmp);
             signed?;
         }
-        "check" | "flash" => {
+        "check" => {
             let path = image_path(&request.firmware)?;
             let current = w.assessment(&path)?;
-            if action == "flash" {
-                validate_flash(&request, &current)?;
-                if hash(&fs::read(&path).map_err(|e| e.to_string())?) != current.image.hash {
-                    return Err("Firmware changed during verification.".into());
-                }
-                w.device_command(&["load", "-v", "-x", &path.to_string_lossy()])?;
-            }
             result.image = Some(current.image.clone());
             result.assessment = Some(current);
+        }
+        "flash" => {
+            let path = image_path(&request.firmware)?;
+            let digest = hash(&fs::read(&path).map_err(|e| e.to_string())?);
+            let reviewed = reviewed_flash(&request, &digest)?;
+            w.device_command(&["load", "-v", "-x", &path.to_string_lossy()])?;
+            result.image = Some(reviewed.image.clone());
+            result.assessment = Some(reviewed);
         }
         "info" => {
             if !normal_cards()?
@@ -1130,6 +1144,7 @@ mod confirmation_tests {
         };
         let current = assess(image, "432D921975CCC729".into(), false, Some("old".into()));
         let mut r = Request {
+            serial: current.serial.clone(),
             phrase: "FLASH 432D921975CCC729".into(),
             review: Some(serde_json::to_value(&current).unwrap()),
             ..Default::default()
@@ -1145,6 +1160,46 @@ mod confirmation_tests {
         assert!(validate_flash(&r, &changed).is_err());
         let locked = assess(current.image, current.serial, true, current.board_key);
         assert!(validate_flash(&r, &locked).is_err());
+    }
+    #[test]
+    fn flash_reuses_review_only_for_the_confirmed_device_and_unchanged_file() {
+        let image = ImageInfo {
+            signed: true,
+            nuke: false,
+            fingerprint: Some("trusted".into()),
+            hash: "digest".into(),
+        };
+        let reviewed = assess(
+            image,
+            "432D921975CCC729".into(),
+            true,
+            Some("trusted".into()),
+        );
+        let mut request = Request {
+            serial: reviewed.serial.clone(),
+            phrase: format!("FLASH {}", reviewed.serial),
+            review: Some(serde_json::to_value(&reviewed).unwrap()),
+            ..Default::default()
+        };
+        assert_eq!(reviewed_flash(&request, "digest").unwrap(), reviewed);
+        assert!(reviewed_flash(&request, "changed").is_err());
+
+        request.serial = "E830F26C33DD8993".into();
+        request.phrase = format!("FLASH {}", request.serial);
+        assert!(reviewed_flash(&request, "digest").is_err());
+
+        request.serial = reviewed.serial.clone();
+        request.phrase = "FLASH DIFFERENT".into();
+        assert!(reviewed_flash(&request, "digest").is_err());
+        request.phrase = format!("FLASH {}", request.serial);
+
+        let rejected = assess(reviewed.image, reviewed.serial, true, Some("other".into()));
+        request.review = Some(serde_json::to_value(rejected).unwrap());
+        request.mismatch_accepted = true;
+        assert!(reviewed_flash(&request, "digest").is_err());
+
+        request.review = None;
+        assert!(reviewed_flash(&request, "digest").is_err());
     }
     #[test]
     #[ignore = "read-only USB inventory, requires connected Pico All"]

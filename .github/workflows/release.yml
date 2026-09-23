@@ -47,13 +47,9 @@ jobs:
             args: ""
             build_type: "flatpak"
 
-          # Windows Builds:
+          # Windows portable package, including the matching picotool binary:
           - platform: "windows-latest"
             args: "--target x86_64-pc-windows-msvc"
-          - platform: "windows-latest"
-            args: "--target i686-pc-windows-msvc"
-          - platform: "windows-latest"
-            args: "--target aarch64-pc-windows-msvc"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -67,7 +63,7 @@ jobs:
         with:
           targets: >
             ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' ||
-            matrix.platform == 'windows-latest' && 'x86_64-pc-windows-msvc,i686-pc-windows-msvc,aarch64-pc-windows-msvc' || '' }}
+            matrix.platform == 'windows-latest' && 'x86_64-pc-windows-msvc' || '' }}
 
       - name: Cache Cargo registry and target
         if: runner.os != 'Linux'
@@ -85,18 +81,40 @@ jobs:
           echo "version=$version" >> $GITHUB_ENV
 
       - name: Install cargo-packager
-        if: runner.os != 'Linux'
+        if: runner.os == 'macOS'
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-packager
 
       - name: Build Binary
         if: runner.os != 'Linux'
-        run: cargo build --release ${{ matrix.args }}
+        run: cargo build --release --locked ${{ matrix.args }}
 
       - name: Build and Package
-        if: runner.os != 'Linux'
+        if: runner.os == 'macOS'
         run: cargo packager --release ${{ matrix.args }}
+
+      - name: Set up Python for Windows packaging
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Package Windows portable release with picotool
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $toolArchive = Join-Path $env:RUNNER_TEMP 'picotool-2.3.1-x64-win.zip'
+          $toolDirectory = Join-Path $env:RUNNER_TEMP 'picotool-2.3.1'
+          Invoke-WebRequest 'https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.1-0/picotool-2.3.1-x64-win.zip' -OutFile $toolArchive
+          if ((Get-FileHash -LiteralPath $toolArchive -Algorithm SHA256).Hash -ne '68730BE0813F8F35BE2CCA147CF7F1572662D5DCF0F5BA468E02A6DD9E85DB2B') {
+            throw 'picotool download checksum mismatch'
+          }
+          Expand-Archive -LiteralPath $toolArchive -DestinationPath $toolDirectory
+          $toolExecutables = @(Get-ChildItem -LiteralPath $toolDirectory -Filter picotool.exe -Recurse -File)
+          if ($toolExecutables.Count -ne 1) { throw 'Expected exactly one picotool executable' }
+          python scripts/package_windows_portable.py --picotool $toolExecutables[0].FullName --app target/x86_64-pc-windows-msvc/release/picoforge.exe --output "target/release/pico-forge-all-v${env:version}-windows-x64.zip"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build AppImage
         if: matrix.build_type == 'appimage'
@@ -130,23 +148,17 @@ jobs:
           body_path: .github/RELEASE_NOTES.md
           prerelease: false
           files: |
+            target/release/pico-forge-all-*-windows-x64.zip
             *.flatpak
             target/release/*.appimage
             target/release/*.AppImage
             target/release/*.zsync
-            target/release/*.msi
             target/release/*.dmg
             target/release/*.app
             target/x86_64-apple-darwin/release/*.dmg
             target/aarch64-apple-darwin/release/*.dmg
             target/x86_64-apple-darwin/release/*.app
             target/aarch64-apple-darwin/release/*.app
-            target/x86_64-pc-windows-msvc/release/*.msi
-            target/x86_64-pc-windows-msvc/release/*-setup.exe
-            target/i686-pc-windows-msvc/release/*.msi
-            target/i686-pc-windows-msvc/release/*-setup.exe
-            target/aarch64-pc-windows-msvc/release/*.msi
-            target/aarch64-pc-windows-msvc/release/*-setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

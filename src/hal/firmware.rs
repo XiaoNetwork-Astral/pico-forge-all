@@ -8,6 +8,8 @@ use std::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
+#[cfg(test)]
+mod mode_tests;
 mod security;
 
 #[derive(Default)]
@@ -211,6 +213,119 @@ fn update_command(nuke: bool) -> [u8; 5] {
     [0x80, 0x1f, if nuke { 2 } else { 1 }, 0, 0]
 }
 
+/// Keep process diagnostics intact until device-state handling has finished.
+#[derive(Debug)]
+enum PicotoolError {
+    Execution(String),
+    Exit { code: i32, output: String },
+}
+impl From<String> for PicotoolError {
+    fn from(message: String) -> Self {
+        Self::Execution(message)
+    }
+}
+impl From<&str> for PicotoolError {
+    fn from(message: &str) -> Self {
+        Self::Execution(message.into())
+    }
+}
+impl From<PicotoolError> for String {
+    fn from(error: PicotoolError) -> Self {
+        match error {
+            PicotoolError::Execution(message) => message,
+            PicotoolError::Exit { code, output } => {
+                if output.contains("Signature verification failed") {
+                    "Signature verification failed".into()
+                } else if output.to_lowercase().contains("no accessible") {
+                    "Cannot access the device in update mode. Check the USB connection and driver."
+                        .into()
+                } else {
+                    format!("picotool failed (exit code {code})")
+                }
+            }
+        }
+    }
+}
+
+fn parse_bootsel(
+    result: Result<String, PicotoolError>,
+    serial: &str,
+    factory_serial: impl FnOnce() -> Result<String, String>,
+) -> Result<Vec<String>, String> {
+    let text = match result {
+        Ok(text) => text,
+        Err(error) => {
+            if let PicotoolError::Exit { output, .. } = &error {
+                let text = output.split_whitespace().collect::<Vec<_>>().join(" ");
+                let absence = if serial.is_empty() {
+                    "No accessible RP-series devices in BOOTSEL mode were found.".to_owned()
+                } else {
+                    format!(
+                        "No accessible RP-series devices in BOOTSEL mode were found with serial number {serial}."
+                    )
+                };
+                // Extra diagnostics indicate a driver/access error, not absence.
+                if text == absence {
+                    return Ok(vec![]);
+                }
+                if text.starts_with("ERROR: Block loop is not valid") {
+                    let found = factory_serial()?;
+                    if serial_valid(&found) && (serial.is_empty() || found == serial) {
+                        return Ok(vec![found]);
+                    }
+                    return Err("Recovery device serial does not match the selected board.".into());
+                }
+            }
+            return Err(error.into());
+        }
+    };
+    let ids: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("chipid:"))
+        .map(|s| s.trim().trim_start_matches("0x").to_uppercase())
+        .collect();
+    let chips: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("type:"))
+        .map(str::trim)
+        .collect();
+    if ids.is_empty()
+        || ids.len() != chips.len()
+        || ids
+            .iter()
+            .any(|s| !serial_valid(s) || (!serial.is_empty() && s != serial))
+        || chips.iter().any(|chip| *chip != "RP2350")
+    {
+        return Err("Could not identify the selected RP2350.".into());
+    }
+    Ok(ids)
+}
+
+fn enter_update_mode(
+    serial: &str,
+    mut probe: impl FnMut() -> Result<Vec<String>, String>,
+    request_update: impl FnOnce() -> Result<(), String>,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<(), String> {
+    if probe()? == [serial] {
+        return Ok(());
+    }
+    request_update()?;
+    // Button confirmation happens in request_update; allow a separate window
+    // for USB re-enumeration after the user confirms.
+    let started = Instant::now();
+    loop {
+        if probe()? == [serial] {
+            return Ok(());
+        }
+        if started.elapsed() >= timeout {
+            return Err("The selected board did not enter update mode.".into());
+        }
+        std::thread::sleep(poll_interval);
+    }
+}
+
 struct Worker {
     tool: String,
     serial: String,
@@ -225,6 +340,9 @@ impl Worker {
         ));
     }
     fn command(&self, args: &[&str]) -> Result<String, String> {
+        self.execute(args).map_err(String::from)
+    }
+    fn execute(&self, args: &[&str]) -> Result<String, PicotoolError> {
         let mut cmd = Command::new(&self.tool);
         cmd.args(args)
             .stdin(Stdio::null())
@@ -282,15 +400,9 @@ impl Worker {
         let text = a.join().map_err(|_| "Output reader stopped")?
             + &b.join().map_err(|_| "Output reader stopped")?;
         if !status.success() {
-            return Err(if text.contains("Signature verification failed") {
-                "Signature verification failed".into()
-            } else if text.to_lowercase().contains("no accessible") {
-                "No device detected in update mode.".into()
-            } else {
-                format!(
-                    "picotool failed (exit code {})",
-                    status.code().unwrap_or(-1)
-                )
+            return Err(PicotoolError::Exit {
+                code: status.code().unwrap_or(-1),
+                output: text,
             });
         }
         Ok(text)
@@ -301,84 +413,45 @@ impl Worker {
         self.command(&args)
     }
     fn bootsel(&self) -> Result<Vec<String>, String> {
-        let result = if self.serial.is_empty() {
-            self.command(&["info", "-d"])
-        } else {
-            self.device_command(&["info", "-d"])
-        };
-        let text = match result {
-            Ok(t) => t,
-            Err(e) => {
-                let t = e.split_whitespace().collect::<Vec<_>>().join(" ");
-                let absence = if self.serial.is_empty() {
-                    "No accessible RP-series devices in BOOTSEL mode were found.".to_owned()
-                } else {
-                    format!(
-                        "No accessible RP-series devices in BOOTSEL mode were found with serial number {}.",
-                        self.serial
-                    )
-                };
-                if t == absence {
-                    return Ok(vec![]);
-                }
-                if t.starts_with("ERROR: Block loop is not valid") {
-                    let found = security::factory_serial(self)?;
-                    if self.serial.is_empty() || found == self.serial {
-                        return Ok(vec![found]);
-                    }
-                    return Err("Recovery device serial does not match the selected board.".into());
-                }
-                return Err(e);
-            }
-        };
-        let ids: Vec<_> = text
-            .lines()
-            .filter_map(|l| l.trim().strip_prefix("chipid:"))
-            .map(|s| s.trim().trim_start_matches("0x").to_uppercase())
-            .collect();
-        if ids.is_empty()
-            || ids
-                .iter()
-                .any(|s| !serial_valid(s) || (!self.serial.is_empty() && s != &self.serial))
-            || text
-                .lines()
-                .filter_map(|l| l.trim().strip_prefix("type:"))
-                .any(|s| s.trim() != "RP2350")
-        {
-            return Err("Could not identify the selected RP2350.".into());
+        let mut args = vec!["info", "-d"];
+        if !self.serial.is_empty() {
+            args.extend(["--ser", &self.serial]);
         }
-        Ok(ids)
+        parse_bootsel(self.execute(&args), &self.serial, || {
+            security::factory_serial(self)
+        })
     }
     fn ensure_bootsel(&self) -> Result<(), String> {
         self.ensure_bootsel_for(false)
     }
     fn ensure_bootsel_for(&self, nuke: bool) -> Result<(), String> {
-        if self.bootsel()? == vec![self.serial.clone()] {
-            return Ok(());
-        }
-        self.log(
-            "INFO",
-            if nuke {
-                "Nuke selected: press the board button while its light breathes red."
-            } else {
-                "When the light flashes, press and release the device button (BOOTSEL)."
+        enter_update_mode(
+            &self.serial,
+            || self.bootsel(),
+            || {
+                self.log(
+                    "INFO",
+                    if nuke {
+                        "Nuke selected: press the board button while its light breathes red."
+                    } else {
+                        "When the light flashes, press and release the device button (BOOTSEL)."
+                    },
+                );
+                management(&self.serial, &update_command(nuke))
+                    .map(|_| ())
+                    .map_err(|error| {
+                        if nuke && ["(6B00)", "(6A86)", "(6D00)"].iter().any(|code| error.contains(code)) {
+                            "The installed firmware does not support Nuke confirmation lights. Update Pico All first.".into()
+                        } else if nuke && error.contains("(6985)") {
+                            "Nuke was not confirmed. Press and release the button during the red breathing prompt, then retry.".into()
+                        } else {
+                            error
+                        }
+                    })
             },
-        );
-        management(&self.serial, &update_command(nuke)).map_err(|e| {
-            if nuke && (e.contains("(6B00)") || e.contains("(6A86)") || e.contains("(6D00)")) {
-                "The installed firmware does not support Nuke confirmation lights. Update Pico All first.".into()
-            } else if nuke && e.contains("(6985)") {
-                "Nuke was not confirmed. Press and release the button during the red breathing prompt, then retry.".into()
-            } else { e }
-        })?;
-        let started = Instant::now();
-        while started.elapsed() < Duration::from_secs(30) {
-            if self.bootsel()? == vec![self.serial.clone()] {
-                return Ok(());
-            }
-            std::thread::sleep(Duration::from_millis(500));
-        }
-        Err("The selected board did not enter update mode.".into())
+            Duration::from_secs(30),
+            Duration::from_millis(500),
+        )
     }
     fn image(&self, path: &Path) -> Result<ImageInfo, String> {
         let text = self.command(&["info", "-a", &path.to_string_lossy()])?;

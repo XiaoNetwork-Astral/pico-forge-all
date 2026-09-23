@@ -354,10 +354,15 @@ impl Render for OffboardViewModel {
             )
             .child(details)
             .child(target);
-        let sign_disabled = self.loading || !self.image.as_ref().is_some_and(|i| !i.signed);
-        let flash_disabled = self.image.is_none()
+        let sign_disabled =
+            self.loading || !self.selection.image.as_ref().is_some_and(|i| !i.signed);
+        let flash_disabled = self.selection.image.is_none()
             || self.loading
-            || self.assessment.as_ref().is_some_and(|a| !a.allowed);
+            || self
+                .selection
+                .assessment
+                .as_ref()
+                .is_some_and(|a| !a.allowed);
         let files = Card::new()
             .title(crate::i18n::tr("Firmware image"))
             .icon(Icon::default().path("icons/file.svg"))

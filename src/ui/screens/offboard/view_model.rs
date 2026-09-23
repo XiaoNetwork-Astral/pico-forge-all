@@ -26,9 +26,7 @@ pub struct OffboardViewModel {
     task: Option<Task<()>>,
     pub(super) read_status: Option<crate::hal::types::FullDeviceStatus>,
     pub(super) read_attempted: bool,
-    pub(super) image: Option<firmware::ImageInfo>,
-    pub(super) assessment: Option<firmware::Assessment>,
-    pub(super) inspected_path: String,
+    pub(super) selection: super::workflow::FirmwareSelection,
 }
 pub enum OffboardEvent {
     Notification(String),
@@ -76,14 +74,21 @@ impl OffboardViewModel {
             })
             .collect();
         for index in [1, 2] {
-            cx.subscribe(&inputs[index], |this, _, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Change) {
-                    this.image = None;
-                    this.assessment = None;
-                    this.inspected_path.clear();
-                    cx.notify();
-                }
-            })
+            cx.subscribe(
+                &inputs[index],
+                move |this, input, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        let value = input.read(cx).text().to_string();
+                        if index == 2 {
+                            this.selection.file_changed(value.trim());
+                        } else {
+                            this.selection.device_changed(&value.trim().to_uppercase());
+                        }
+                        this.pending = None;
+                        cx.notify();
+                    }
+                },
+            )
             .detach();
         }
         cx.subscribe_in(
@@ -136,9 +141,7 @@ impl OffboardViewModel {
         Self {
             read_status: None,
             read_attempted: false,
-            image: None,
-            assessment: None,
-            inspected_path: String::new(),
+            selection: super::workflow::FirmwareSelection::default(),
             device: models.device.clone(),
             inputs,
             loading: false,
@@ -270,28 +273,29 @@ impl OffboardViewModel {
             self.read_device(window, cx);
             return;
         }
-        let mut request = self.request(action, cx);
-        if action == "flash" {
-            if let Some(assessment) = &self.assessment {
-                if self.inspected_path == request.firmware && assessment.serial == request.serial {
-                    if !assessment.allowed {
-                        return;
-                    }
-                    request.review = Some(serde_json::to_value(assessment).unwrap());
-                    self.confirm_flash(request, window, cx);
-                    return;
-                }
-            }
-            request.action = "check".into();
-            self.run(request, window, cx);
-        } else if action == "prepare" {
+        let request = self.request(action, cx);
+        if action == "flash" || action == "prepare" {
             self.confirm(request, window, cx);
         } else {
+            if matches!(action, "image" | "inspect") {
+                self.selection = super::workflow::FirmwareSelection::default();
+            }
             self.run(request, window, cx);
         }
     }
-    fn confirm_flash(&mut self, mut request: Request, window: &mut Window, cx: &mut Context<Self>) {
-        if self.assessment.as_ref().is_some_and(|a| a.mismatch) && !request.mismatch_accepted {
+    fn write_or_confirm_mismatch(
+        &mut self,
+        mut request: Request,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .selection
+            .assessment
+            .as_ref()
+            .is_some_and(|a| a.mismatch)
+            && !request.mismatch_accepted
+        {
             let weak = cx.entity().downgrade();
             request.mismatch_accepted = true;
             window.open_dialog(cx, move |dialog, _, _| {
@@ -303,15 +307,15 @@ impl OffboardViewModel {
                         let request = request.clone(); let weak = weak.clone();
                         vec![
                             Button::new("cancel-mismatch").label(crate::i18n::tr("Cancel")).on_click(|_, w, cx| w.close_dialog(cx)),
-                            Button::new("accept-mismatch").danger().label(crate::i18n::tr("Continue to confirmation")).on_click(move |_, w, cx| {
+                            Button::new("accept-mismatch").danger().label(crate::i18n::tr("Continue with update")).on_click(move |_, w, cx| {
                                 w.close_dialog(cx);
-                                let _ = weak.update(cx, |this, cx| this.confirm(request.clone(), w, cx));
+                                let _ = weak.update(cx, |this, cx| this.run(request.clone(), w, cx));
                             })
                         ]
                     })
             });
         } else {
-            self.confirm(request, window, cx);
+            self.run(request, window, cx);
         }
     }
     pub(super) fn confirm_pending(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -331,11 +335,19 @@ impl OffboardViewModel {
             &[format!("{}", verb), format!("{}", request.serial)],
         );
         let warning = match request.action.as_str() {
-            "flash" if self.assessment.as_ref().is_some_and(|a| a.image.nuke) => crate::i18n::tr(
-                "This runs Nuke and permanently erases all external Flash, including firmware, keys, PINs and settings. Hardware security locks remain. Afterward, install firmware signed with the board's trusted key.",
-            ),
+            "flash"
+                if self
+                    .selection
+                    .image
+                    .as_ref()
+                    .is_some_and(|image| image.nuke) =>
+            {
+                crate::i18n::tr(
+                    "Nuke permanently erases all firmware, keys, PINs and settings. Hardware security locks remain.",
+                )
+            }
             "flash" => crate::i18n::tr(
-                "This writes the selected UF2, verifies the readback and restarts this board. Keep it connected until completion.",
+                "Firmware updates may erase stored keys, PINs and settings. Back up any data you need before continuing.",
             ),
             "prepare" => crate::i18n::tr(
                 "This erases all application credentials, PINs and settings. Firmware and permanent hardware locks are retained.",
@@ -344,14 +356,12 @@ impl OffboardViewModel {
                 "This permanently programs the reviewed security fuses. It cannot be undone. Keep the trusted signing key backed up.",
             ),
         };
-        let target = crate::i18n::format(
-            "Device: {0}\nFirmware: {1}",
-            &[
-                format!("{}", request.serial),
-                format!("{}", request.firmware),
-            ],
-        );
-
+        let warning_title =
+            crate::i18n::tr(if matches!(request.action.as_str(), "flash" | "prepare") {
+                "Data loss warning"
+            } else {
+                "Confirm device operation"
+            });
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(phrase.clone()));
         let weak = cx.entity().downgrade();
         let submit = std::rc::Rc::new({
@@ -369,6 +379,9 @@ impl OffboardViewModel {
                 }
                 let mut request = request.clone();
                 request.phrase = value;
+                if request.action == "flash" {
+                    request.action = "check".into();
+                }
                 w.close_dialog(cx);
                 let _ = weak.update(cx, |this, cx| this.run(request, w, cx));
             }
@@ -378,15 +391,25 @@ impl OffboardViewModel {
             let ok = submit.clone();
             dialog
                 .title(crate::i18n::tr("Confirm device operation"))
+                .border_1()
+                .border_color(rgb(0xef4444))
                 .child(
                     v_flex()
                         .gap_3()
-                        .child(warning)
-                        .child(target.clone())
-                        .child(crate::i18n::format(
-                            "Type {0} to continue",
-                            &[format!("{}", phrase)],
+                        .child(crate::ui::components::notice::warning(
+                            warning_title,
+                            warning,
+                            true,
                         ))
+                        .child(
+                            div()
+                                .text_color(rgb(0x67e8f9))
+                                .font_weight(FontWeight::BOLD)
+                                .child(crate::i18n::format(
+                                    "Type {0} to continue",
+                                    &[format!("{}", phrase)],
+                                )),
+                        )
                         .child(Input::new(&input)),
                 )
                 .on_ok(move |_, w, cx| {
@@ -435,23 +458,24 @@ impl OffboardViewModel {
                         match result {
                             Ok(Ok(result)) => {
                                 this.loading = false;
+                                if let Some(image) = result.image {
+                                    let path = result
+                                        .output
+                                        .clone()
+                                        .unwrap_or_else(|| next.firmware.clone());
+                                    this.selection.inspected(
+                                        path,
+                                        image,
+                                        result.assessment.clone(),
+                                    );
+                                }
                                 if let Some(path) = result.output {
                                     this.inputs[2]
-                                        .update(cx, |i, cx| i.set_value(path.clone(), window, cx));
-                                    this.inspected_path = path;
-                                } else {
-                                    this.inspected_path = next.firmware.clone();
-                                }
-                                if result.image.is_some() {
-                                    this.image = result.image;
+                                        .update(cx, |i, cx| i.set_value(path, window, cx));
                                 }
                                 if let Some(a) = result.assessment {
-                                    this.assessment = Some(a.clone());
-                                    if next.action == "check" && a.allowed {
-                                        let mut req = next.clone();
-                                        req.action = "flash".into();
-                                        req.review = Some(serde_json::to_value(a).unwrap());
-                                        this.confirm_flash(req, window, cx);
+                                    if let Some(req) = super::workflow::confirmed_flash(&next, &a) {
+                                        this.write_or_confirm_mismatch(req, window, cx);
                                     }
                                 }
                                 if let Some(review) = result.review {

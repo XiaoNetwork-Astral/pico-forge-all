@@ -87,7 +87,18 @@ fn image_path(value: &str) -> Result<PathBuf, String> {
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("uf2"))
     {
-        return Err("Choose an existing .uf2 firmware file.".into());
+        return Err("Choose a valid UF2 firmware file.".into());
+    }
+    let bytes = fs::read(path).map_err(|_| "Choose a valid UF2 firmware file.")?;
+    if bytes.is_empty()
+        || bytes.len() % 512 != 0
+        || bytes.chunks_exact(512).any(|block| {
+            block[..4] != 0x0a324655u32.to_le_bytes()
+                || block[4..8] != 0x9e5d5157u32.to_le_bytes()
+                || block[508..] != 0x0ab16f30u32.to_le_bytes()
+        })
+    {
+        return Err("Choose a valid UF2 firmware file.".into());
     }
     fs::canonicalize(path).map_err(|e| e.to_string())
 }
@@ -560,8 +571,12 @@ fn resolve_picotool(requested: &str) -> String {
 }
 
 pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
-    let _guard = super::transport::pcsc::lock_device().map_err(|e| e.to_string())?;
     let action = request.action.as_str();
+    let _guard = if matches!(action, "image" | "inspect" | "sign") {
+        None
+    } else {
+        Some(super::transport::pcsc::lock_device().map_err(|e| e.to_string())?)
+    };
     if !matches!(action, "image" | "inspect" | "sign" | "scan") && !serial_valid(&request.serial) {
         return Err("Choose a board or enter its 16-digit serial.".into());
     }
@@ -599,9 +614,6 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
         "image" | "inspect" => {
             let path = image_path(&request.firmware)?;
             result.image = Some(w.image(&path)?);
-            if action == "inspect" && serial_valid(&request.serial) {
-                result.assessment = Some(w.assessment(&path)?);
-            }
         }
         "sign" => {
             let source = image_path(&request.firmware)?;
@@ -660,13 +672,6 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
             })();
             let _ = fs::remove_file(tmp);
             signed?;
-            w.log(
-                "INFO",
-                format!(
-                    "Temporary signed image (deleted when PicoForge closes): {}",
-                    dest.display()
-                ),
-            );
         }
         "check" | "flash" => {
             let path = image_path(&request.firmware)?;
@@ -972,6 +977,24 @@ mod tests {
         assert!(!serial_valid("--all"));
         assert!(!serial_valid(""));
     }
+
+    #[test]
+    fn invalid_firmware_is_rejected_before_picotool() {
+        let path =
+            std::env::temp_dir().join(format!("invalid-firmware-{}.uf2", rand::random::<u64>()));
+        for data in [Vec::new(), b"PK fake ZIP content".to_vec(), vec![0; 512]] {
+            fs::write(&path, data).unwrap();
+            assert_eq!(
+                image_path(path.to_str().unwrap()).unwrap_err(),
+                "Choose a valid UF2 firmware file."
+            );
+        }
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            image_path(path.to_str().unwrap()).unwrap_err(),
+            "Choose a valid UF2 firmware file."
+        );
+    }
 }
 
 #[cfg(test)]
@@ -980,6 +1003,10 @@ mod native_integration {
     #[test]
     #[ignore = "requires PICOTOOL and PICOFORGE_TEST_UF2; local files only"]
     fn native_sign_and_inspect() {
+        // These operations must work without owning or contacting a device,
+        // even with a device serial in the UI and a Nuke image selected.
+        let _device_busy = super::super::transport::pcsc::lock_device().unwrap();
+        let serial = "0000000000000000".to_string();
         let input = std::env::var("PICOFORGE_TEST_UF2").unwrap();
         let tool = std::env::var("PICOTOOL").unwrap();
         let key = std::env::var("PICOFORGE_TEST_KEY").unwrap();
@@ -989,6 +1016,7 @@ mod native_integration {
         let unsigned = run(
             Request {
                 action: "inspect".into(),
+                serial: serial.clone(),
                 picotool: tool.clone(),
                 firmware: input.clone(),
                 ..Default::default()
@@ -1000,6 +1028,7 @@ mod native_integration {
         let signed = run(
             Request {
                 action: "sign".into(),
+                serial: serial.clone(),
                 picotool: tool.clone(),
                 firmware: input,
                 key,
@@ -1020,6 +1049,7 @@ mod native_integration {
         let inspected = run(
             Request {
                 action: "inspect".into(),
+                serial: serial.clone(),
                 picotool: tool.clone(),
                 firmware: output.clone(),
                 ..Default::default()
@@ -1031,6 +1061,7 @@ mod native_integration {
         let rejected = run(
             Request {
                 action: "sign".into(),
+                serial,
                 picotool: tool,
                 firmware: output.clone(),
                 ..Default::default()

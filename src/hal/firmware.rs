@@ -380,6 +380,26 @@ fn enter_update_mode(
     }
 }
 
+fn wait_for_restart(
+    serial: &str,
+    mut probe: impl FnMut() -> Result<Vec<String>, String>,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        // USB readers can temporarily disappear or reject connections while
+        // Windows enumerates the restarted device.
+        if probe().is_ok_and(|ids| ids.iter().filter(|id| *id == serial).count() == 1) {
+            return Ok(());
+        }
+        if started.elapsed() >= timeout {
+            return Err("The selected board did not reconnect after restart.".into());
+        }
+        std::thread::sleep(poll_interval);
+    }
+}
+
 struct Worker {
     tool: String,
     serial: String,
@@ -477,6 +497,22 @@ impl Worker {
     }
     fn ensure_bootsel(&self) -> Result<(), String> {
         self.ensure_bootsel_for(false)
+    }
+    fn wait_for_restart(&self, nuke: bool) -> Result<(), String> {
+        self.log("INFO", "Waiting for device to restart");
+        wait_for_restart(
+            &self.serial,
+            || {
+                if nuke {
+                    // Nuke erases the application and returns to the ROM loader.
+                    self.bootsel()
+                } else {
+                    normal_cards().map(|cards| cards.into_iter().map(|(id, _)| id).collect())
+                }
+            },
+            Duration::from_secs(30),
+            Duration::from_millis(500),
+        )
     }
     fn ensure_bootsel_for(&self, nuke: bool) -> Result<(), String> {
         enter_update_mode(
@@ -736,6 +772,7 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
             let digest = hash(&fs::read(&path).map_err(|e| e.to_string())?);
             let reviewed = reviewed_flash(&request, &digest)?;
             w.device_command(&["load", "-v", "-x", &path.to_string_lossy()])?;
+            w.wait_for_restart(reviewed.image.nuke)?;
             result.image = Some(reviewed.image.clone());
             result.assessment = Some(reviewed);
         }
@@ -758,18 +795,7 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
             } else {
                 management(&w.serial, &[0x80, 0x1f, 0, 0, 0])?;
             }
-            let started = Instant::now();
-            loop {
-                if normal_cards()
-                    .is_ok_and(|cards| cards.iter().filter(|(s, _)| s == &w.serial).count() == 1)
-                {
-                    break;
-                }
-                if started.elapsed() > Duration::from_secs(30) {
-                    return Err("The selected board did not return to normal mode.".into());
-                }
-                std::thread::sleep(Duration::from_millis(500));
-            }
+            w.wait_for_restart(false)?;
         }
         _ => result.review = security::execute(&w, &request)?,
     }

@@ -71,6 +71,33 @@ fn update_request_runs_once_and_waits_through_usb_reenumeration() {
 }
 
 #[test]
+fn restart_waits_for_the_selected_device_to_respond() {
+    let mut replies = VecDeque::from([
+        Ok(vec![]),
+        Err("USB reader is reconnecting".into()),
+        Ok(vec!["E830F26C33DD8993".into()]),
+        Ok(vec![SERIAL.into(), SERIAL.into()]),
+        Ok(vec!["E830F26C33DD8993".into(), SERIAL.into()]),
+    ]);
+    wait_for_restart(
+        SERIAL,
+        || replies.pop_front().expect("unexpected probe"),
+        Duration::from_secs(1),
+        Duration::ZERO,
+    )
+    .unwrap();
+    assert!(replies.is_empty());
+}
+
+#[test]
+fn restart_timeout_is_an_error_not_success() {
+    assert_eq!(
+        wait_for_restart(SERIAL, || Ok(vec![]), Duration::ZERO, Duration::ZERO).unwrap_err(),
+        "The selected board did not reconnect after restart."
+    );
+}
+
+#[test]
 fn access_failures_and_unknown_process_errors_do_not_request_a_reboot() {
     for error in [
         PicotoolError::Exit {

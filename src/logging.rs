@@ -6,7 +6,6 @@
 //! loggers (`gpui`, `gpui_component`, `blade_graphics`) are capped at
 //! `Error` to reduce noise.
 
-use directories::ProjectDirs;
 use log::LevelFilter;
 use log4rs::{
     append::{
@@ -29,38 +28,21 @@ pub(crate) fn local_timestamp() -> String {
 
 /// Initializes log4rs with custom configuration for stdout and file logging.
 pub fn logger_init() {
-    let qual = "in";
-    let org = "suyogtandel";
-    let app = "picoforge";
-
-    // Determine the log file path using ProjectDirs for cross-platform compatibility
-    let log_file_path = {
-        let log_dir = if let Some(proj_dirs) = ProjectDirs::from(qual, org, app) {
-            proj_dirs.data_local_dir().join("logs")
-        } else {
-            eprintln!("Could not determine project directories. Falling back to local directory.");
-            std::path::PathBuf::from("logs")
-        };
-
-        if let Err(e) = fs::create_dir_all(&log_dir) {
-            eprintln!("Failed to create log directory at {:?}: {}", log_dir, e);
-        }
-
-        log_dir.join("picoforge.log")
-    };
-
     // TODO: Add session based log files or rolling log files with archiving of old files, to prevent a single log file from growing too large.
     let size_trigger = SizeTrigger::new(10 * 1024 * 1024); // 10 MB limit
     let roller = DeleteRoller::new();
     let policy = CompoundPolicy::new(Box::new(size_trigger), Box::new(roller));
 
     // File Appender
-    let logfile = RollingFileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new(
-            "[{d(%Y-%m-%d %H:%M:%S %Z)} {l} {t}] {m}{n}",
-        )))
-        .build(log_file_path, Box::new(policy))
-        .unwrap();
+    let logfile = crate::storage::paths().and_then(|paths| {
+        fs::create_dir_all(&paths.logs).map_err(|error| error.to_string())?;
+        RollingFileAppender::builder()
+            .encoder(Box::new(PatternEncoder::new(
+                "[{d(%Y-%m-%d %H:%M:%S %Z)} {l} {t}] {m}{n}",
+            )))
+            .build(paths.logs.join("picoforge.log"), Box::new(policy))
+            .map_err(|error| error.to_string())
+    });
 
     // Console Appender
     let stdout = ConsoleAppender::builder()
@@ -76,12 +58,20 @@ pub fn logger_init() {
         LevelFilter::Info
     };
 
-    let config = log4rs::Config::builder()
-        .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+    let mut builder =
+        log4rs::Config::builder().appender(Appender::builder().build("stdout", Box::new(stdout)));
+    let mut appenders = vec!["stdout"];
+    match logfile {
+        Ok(logfile) => {
+            builder = builder.appender(Appender::builder().build("logfile", Box::new(logfile)));
+            appenders.push("logfile");
+        }
+        Err(error) => eprintln!("Could not open the application log: {error}"),
+    }
+    let config = builder
         .logger(
             Logger::builder()
-                .appenders(["stdout", "logfile"])
+                .appenders(appenders.clone())
                 .additive(false)
                 .build("picoforge", app_level),
         )
@@ -90,7 +80,7 @@ pub fn logger_init() {
         .logger(Logger::builder().build("blade_graphics", LevelFilter::Error))
         .build(
             Root::builder()
-                .appenders(vec!["logfile", "stdout"])
+                .appenders(appenders)
                 .build(LevelFilter::Error),
         )
         .unwrap();

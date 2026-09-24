@@ -53,6 +53,9 @@ opt-level = 3     # Prioritizes speed. Use `z` if you prefer small binary size.
 # panic = "abort"   # Higher performance by disabling panic handlers.
 strip = true # Ensures debug symbols are removed.
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
 [target.'cfg(windows)'.build-dependencies]
 tauri-winres = "0.3"
 

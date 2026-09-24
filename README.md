@@ -16,9 +16,13 @@ This is an independent fork of [PicoForge](https://github.com/librekeys/picoforg
 
 ## Download and install
 
-Download the **Windows x64 portable package** from [Releases](https://github.com/XiaoNetwork-Astral/pico-forge-all/releases/latest), extract it and run `picoforge.exe`. For Linux and macOS, see [building from source](docs/Building.md).
+Download a **Windows x86 or x64** portable ZIP or installer from [Releases](https://github.com/XiaoNetwork-Astral/pico-forge-all/releases/latest). Extract the ZIP and run `picoforge.exe`, or run the `setup.exe` installer. For Linux and macOS, see [building from source](docs/Building.md).
+
+The portable ZIP includes `portable.txt`; when this file exists beside the executable, settings and application data stay in that directory. Without it, PicoForge All uses standard system directories. The marker's contents do not matter; restart the app after adding or removing it.
 
 The Windows package includes picotool for firmware operations. Source builds use [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases) from PATH or `PICOTOOL`.
+
+On Windows, PicoForge All offers to restart as administrator when needed to read restricted device information. You can keep using it without elevation.
 
 ## Usage
 

@@ -47,9 +47,15 @@ jobs:
             args: ""
             build_type: "flatpak"
 
-          # Windows portable package, including the matching picotool binary:
+          # Windows portable ZIPs and NSIS installers:
           - platform: "windows-latest"
             args: "--target x86_64-pc-windows-msvc"
+            windows_arch: "x64"
+            windows_target: "x86_64-pc-windows-msvc"
+          - platform: "windows-latest"
+            args: "--target i686-pc-windows-msvc"
+            windows_arch: "x86"
+            windows_target: "i686-pc-windows-msvc"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -63,7 +69,7 @@ jobs:
         with:
           targets: >
             ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' ||
-            matrix.platform == 'windows-latest' && 'x86_64-pc-windows-msvc' || '' }}
+            matrix.platform == 'windows-latest' && matrix.windows_target || '' }}
 
       - name: Cache Cargo registry and target
         if: runner.os != 'Linux'
@@ -81,10 +87,10 @@ jobs:
           echo "version=$version" >> $GITHUB_ENV
 
       - name: Install cargo-packager
-        if: runner.os == 'macOS'
+        if: runner.os != 'Linux'
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-packager
+          tool: cargo-packager@0.11.8
 
       - name: Build Binary
         if: runner.os != 'Linux'
@@ -100,20 +106,23 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Package Windows portable release with picotool
+      - name: Set up MSVC for Windows tools
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.windows_arch }}
+
+      - name: Package Windows releases with picotool
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $toolArchive = Join-Path $env:RUNNER_TEMP 'picotool-2.3.1-x64-win.zip'
+          python -m pip install cmake==3.31.10 ninja
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $toolDirectory = Join-Path $env:RUNNER_TEMP 'picotool-2.3.1'
-          Invoke-WebRequest 'https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.1-0/picotool-2.3.1-x64-win.zip' -OutFile $toolArchive
-          if ((Get-FileHash -LiteralPath $toolArchive -Algorithm SHA256).Hash -ne '68730BE0813F8F35BE2CCA147CF7F1572662D5DCF0F5BA468E02A6DD9E85DB2B') {
-            throw 'picotool download checksum mismatch'
-          }
-          Expand-Archive -LiteralPath $toolArchive -DestinationPath $toolDirectory
-          $toolExecutables = @(Get-ChildItem -LiteralPath $toolDirectory -Filter picotool.exe -Recurse -File)
-          if ($toolExecutables.Count -ne 1) { throw 'Expected exactly one picotool executable' }
-          python scripts/package_windows_portable.py --picotool $toolExecutables[0].FullName --app target/x86_64-pc-windows-msvc/release/picoforge.exe --output "target/release/pico-forge-all-v${env:version}-windows-x64.zip"
+          ./scripts/prepare_windows_picotool.ps1 -Arch '${{ matrix.windows_arch }}' -WorkDir $toolDirectory
+          $runtime = @(Get-ChildItem -LiteralPath (Join-Path $env:VCToolsRedistDir '${{ matrix.windows_arch }}') -Directory -Filter 'Microsoft.VC*.CRT')
+          if ($runtime.Count -ne 1) { throw 'Expected one VC runtime directory' }
+          python scripts/package_windows_portable.py --picotool "$toolDirectory/tool/picotool.exe" --app 'target/${{ matrix.windows_target }}/release/picoforge.exe' --runtime-dir $runtime[0].FullName --output "target/release/pico-forge-all-v${env:version}-windows-${{ matrix.windows_arch }}.zip" --installer-output "target/release/pico-forge-all-v${env:version}-windows-${{ matrix.windows_arch }}-setup.exe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build AppImage
@@ -148,7 +157,8 @@ jobs:
           body_path: .github/RELEASE_NOTES.md
           prerelease: false
           files: |
-            target/release/pico-forge-all-*-windows-x64.zip
+            target/release/pico-forge-all-*-windows-*.zip
+            target/release/pico-forge-all-*-windows-*-setup.exe
             *.flatpak
             target/release/*.appimage
             target/release/*.AppImage

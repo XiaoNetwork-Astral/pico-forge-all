@@ -714,7 +714,9 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
             if artifacts.closing {
                 return Err("Application is closing.".into());
             }
-            let dest = std::env::temp_dir().join(format!(
+            let temporary = &crate::storage::paths()?.temporary;
+            fs::create_dir_all(temporary).map_err(|e| e.to_string())?;
+            let dest = temporary.join(format!(
                 "picoforge-signed-{}-{:032x}.uf2",
                 std::process::id(),
                 rand::random::<u128>()
@@ -1122,7 +1124,7 @@ mod native_integration {
         assert_ne!(PathBuf::from(&output), external_output);
         assert_eq!(
             Path::new(&output).parent(),
-            Some(std::env::temp_dir().as_path())
+            Some(crate::storage::paths().unwrap().temporary.as_path())
         );
         assert!(Path::new(&output).exists());
         let inspected = run(

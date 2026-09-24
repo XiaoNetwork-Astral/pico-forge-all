@@ -892,11 +892,13 @@ use gpui_component::Root;
 use gpui_component::{Theme, ThemeMode, ThemeSet};
 use ui::app::ApplicationRoot;
 
+mod elevation;
 pub mod error;
 mod hal;
 mod i18n;
 pub mod logging;
 mod preferences;
+mod storage;
 mod ui;
 
 fn main() {
@@ -910,6 +912,7 @@ fn main() {
         .detach();
         gpui_component::init(cx);
         preferences::load();
+        ui::components::administrator::init(cx);
         Theme::change(ThemeMode::Dark, None, cx);
 
         // Register sidebar toggle keybinding
@@ -974,7 +977,9 @@ fn main() {
             cx.open_window(window_options, |window, cx| {
                 let view = cx.new(ApplicationRoot::new);
                 window.focus(&view.read(cx).focus_handle());
-                cx.new(|cx| Root::new(view, window, cx))
+                let root = cx.new(|cx| Root::new(view, window, cx));
+                window.defer(cx, ui::components::administrator::show_startup_prompt);
+                root
             })?;
 
             Ok::<_, anyhow::Error>(())

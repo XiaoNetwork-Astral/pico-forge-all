@@ -28,9 +28,7 @@ pub fn get() -> Preferences {
     CURRENT.read().unwrap().clone()
 }
 fn path() -> Result<std::path::PathBuf, String> {
-    directories::ProjectDirs::from("org", "PicoForge", "PicoForge All")
-        .map(|d| d.config_dir().join("settings.json"))
-        .ok_or_else(|| "Software settings directory is unavailable".into())
+    Ok(crate::storage::paths()?.config.join("settings.json"))
 }
 fn system_chinese() -> bool {
     #[cfg(windows)]

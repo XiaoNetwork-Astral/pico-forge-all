@@ -12,6 +12,7 @@ pub struct Card {
     description: Option<SharedString>,
     icon: Option<Icon>,
     header_right: Option<AnyElement>,
+    footer: Option<AnyElement>,
     children: Vec<AnyElement>,
 }
 
@@ -22,6 +23,7 @@ impl Card {
             description: None,
             icon: None,
             header_right: None,
+            footer: None,
             children: Vec::new(),
         }
     }
@@ -43,6 +45,11 @@ impl Card {
 
     pub fn header_right(mut self, element: impl IntoElement) -> Self {
         self.header_right = Some(element.into_any_element());
+        self
+    }
+
+    pub fn footer(mut self, element: impl IntoElement) -> Self {
+        self.footer = Some(element.into_any_element());
         self
     }
 }
@@ -102,6 +109,8 @@ impl RenderOnce for Card {
         };
 
         div()
+            .flex()
+            .flex_col()
             .w_full()
             .bg(rgb(0x18181b))
             .border_1()
@@ -109,5 +118,9 @@ impl RenderOnce for Card {
             .rounded_xl()
             .p_6()
             .child(v_flex().gap_6().children(header).children(self.children))
+            .children(
+                self.footer
+                    .map(|footer| h_flex().mt_auto().pt_6().justify_end().child(footer)),
+            )
     }
 }

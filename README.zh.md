@@ -16,9 +16,13 @@
 
 ## 下载与安装
 
-从 [Releases](https://github.com/XiaoNetwork-Astral/pico-forge-all/releases/latest) 下载 **Windows x64 便携包**，解压后运行 `picoforge.exe`；Linux 和 macOS 用户可参考[源码构建说明](docs/Building.md)
+从 [Releases](https://github.com/XiaoNetwork-Astral/pico-forge-all/releases/latest) 下载 **Windows x86 或 x64** 的绿色版 ZIP 或安装版；绿色版解压后运行 `picoforge.exe`，安装版运行 `setup.exe`；Linux 和 macOS 用户可参考[源码构建说明](docs/Building.md)
 
-Windows 便携包已内置 picotool；从源码构建时，需将 [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases) 加入 PATH，或通过 `PICOTOOL` 指定路径
+绿色版附带 `portable.txt`；只要可执行文件同目录存在该文件，设置和程序数据就保存在该目录内，否则使用系统标准目录；文件内容不限，添加或移除后重启程序即可切换
+
+Windows 发行包已内置 picotool；从源码构建时，需将 [picotool 2.3.1+](https://github.com/raspberrypi/picotool/releases) 加入 PATH，或通过 `PICOTOOL` 指定路径
+
+Windows 下未以管理员身份运行时，程序会提示部分设备信息可能无法读取，并提供快捷重启按钮；也可选择继续使用
 
 ## 使用
 

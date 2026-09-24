@@ -236,10 +236,9 @@ fn plan(
     Ok(writes)
 }
 fn state_dir() -> Result<PathBuf, String> {
-    let dirs = directories::ProjectDirs::from("org", "PicoForge", "PicoForge All")
-        .ok_or("No application data directory")?;
-    fs::create_dir_all(dirs.data_local_dir()).map_err(|e| e.to_string())?;
-    Ok(dirs.data_local_dir().into())
+    let directory = &crate::storage::paths()?.data;
+    fs::create_dir_all(directory).map_err(|e| e.to_string())?;
+    Ok(directory.clone())
 }
 fn proof_path(serial: &str) -> Result<PathBuf, String> {
     Ok(state_dir()?.join(format!("boot-check-{serial}.json")))

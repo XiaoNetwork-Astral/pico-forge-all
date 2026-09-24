@@ -1,5 +1,6 @@
 //! Reusable UI components built on top of gpui-component primitives.
 
+pub mod administrator;
 pub mod applet_gate;
 pub mod button;
 pub mod card;

@@ -199,8 +199,9 @@ impl HomeViewModel {
             )
     }
 
-    fn render_fido_info(fido: Option<&FidoDeviceInfo>, theme: &Theme) -> impl IntoElement {
-        Card::new()
+    fn render_fido_info(fido: Option<&FidoDeviceInfo>, cx: &App) -> impl IntoElement {
+        let theme = cx.theme();
+        let card = Card::new()
             .title(crate::i18n::tr("FIDO2 Information"))
             .icon(Icon::default().path("icons/shield.svg"))
             .child(if let Some(fido) = fido {
@@ -343,7 +344,15 @@ impl HomeViewModel {
                     .text_color(theme.muted_foreground)
                     .child(crate::i18n::tr("FIDO information not available"))
                     .into_any_element()
-            })
+            });
+        if crate::ui::components::administrator::required(cx) {
+            card.footer(crate::ui::components::administrator::restart_button(
+                "administrator-restart-home",
+                cx,
+            ))
+        } else {
+            card
+        }
     }
 
     fn render_led_config(status: &FullDeviceStatus, theme: &Theme) -> impl IntoElement {
@@ -586,10 +595,7 @@ impl Render for HomeViewModel {
                     .grid_cols(columns)
                     .gap_6()
                     .child(Self::render_device_info(status, cx.theme()))
-                    .child(Self::render_fido_info(
-                        device.fido_info.as_ref(),
-                        cx.theme(),
-                    ))
+                    .child(Self::render_fido_info(device.fido_info.as_ref(), cx))
                     .child(Self::render_led_config(status, cx.theme()))
                     .child(Self::render_security_status(status, cx.theme()))
                     .into_any_element()

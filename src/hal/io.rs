@@ -76,12 +76,16 @@ pub fn read_device_details() -> Result<FullDeviceStatus, PFError> {
                     }),
                     // Prefer the phy record's product override; fall back to the
                     // FIDO transport's USB product string when it has none.
-                    product_name: if !rescue.config.product_name.is_empty() {
+                    product_name: if rescue.firmware_type == FirmwareType::PicoAll
+                        || !rescue.config.product_name.is_empty()
+                    {
                         rescue.config.product_name
                     } else {
                         fido.config.product_name
                     },
-                    manufacturer_name: if !rescue.config.manufacturer_name.is_empty() {
+                    manufacturer_name: if rescue.firmware_type == FirmwareType::PicoAll
+                        || !rescue.config.manufacturer_name.is_empty()
+                    {
                         rescue.config.manufacturer_name
                     } else {
                         fido.config.manufacturer_name

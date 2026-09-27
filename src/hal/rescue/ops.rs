@@ -556,11 +556,16 @@ impl RescueOperations for PcscTransport {
         }
 
         // Product Name (Tag 0x09)
-        if let Some(name) = config.product_name.filter(|n| !n.is_empty()) {
+        if let Some(name) = config.product_name {
             let name_bytes = name.as_bytes();
             let len = name_bytes.len() + 1;
             if len > 32 {
                 return Err(PFError::Io("Product name too long".into()));
+            }
+            if name_bytes.contains(&0) {
+                return Err(PFError::Io(
+                    "USB names cannot contain a NUL character.".into(),
+                ));
             }
 
             tlv.push(PhyTag::UsbProduct as u8);
@@ -570,11 +575,16 @@ impl RescueOperations for PcscTransport {
         }
 
         // Manufacturer Name (Tag 0x0F)
-        if let Some(mfr) = config.manufacturer_name.filter(|n| !n.is_empty()) {
+        if let Some(mfr) = config.manufacturer_name {
             let mfr_bytes = mfr.as_bytes();
             let len = mfr_bytes.len() + 1;
             if len > 32 {
                 return Err(PFError::Io("Manufacturer name too long".into()));
+            }
+            if mfr_bytes.contains(&0) {
+                return Err(PFError::Io(
+                    "USB names cannot contain a NUL character.".into(),
+                ));
             }
             tlv.push(PhyTag::UsbManufacturer as u8);
             tlv.push(len as u8);
@@ -582,10 +592,10 @@ impl RescueOperations for PcscTransport {
             tlv.push(0x00);
         }
 
-        // LED Order (Tag 0x0D) — RS-Key extension, silently preserved
+        // Pico All also accepts a standalone order when using its default driver.
         if let Some(val) = config
             .led_order
-            .filter(|_| self.firmware_type != FirmwareType::PicoAll)
+            .filter(|_| self.firmware_type != FirmwareType::PicoAll || config.led_driver.is_none())
         {
             tlv.push(PhyTag::LedOrder as u8);
             tlv.push(0x01);
@@ -611,7 +621,7 @@ impl RescueOperations for PcscTransport {
 
         if self.firmware_type == FirmwareType::PicoAll {
             let current = super::pico_led::data(self)?;
-            for tag in [0x10, 0x11] {
+            for tag in [0x10, 0x11, 0x12] {
                 if let Some(block) = super::pico_led::block(&current, tag) {
                     tlv.extend([tag, block.len() as u8]);
                     tlv.extend_from_slice(block);
@@ -640,6 +650,9 @@ impl RescueOperations for PcscTransport {
         let rx = self.transmit(&apdu, &mut rx_buf)?;
 
         if rx.ends_with(&[0x90, 0x00]) {
+            if self.firmware_type == FirmwareType::PicoAll {
+                super::pico_led::verify_phy_write(&tlv, &super::pico_led::data(self)?)?;
+            }
             log::info!("Configuration applied successfully");
             Ok("Configuration Applied Successfully".into())
         } else if rx.ends_with(&[0x69, 0x85]) {

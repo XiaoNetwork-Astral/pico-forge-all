@@ -232,12 +232,15 @@ impl LedDriverType {
     }
 }
 
-/// LED colour ordering (RS-Key phy tag 0x0D). The firmware treats any non-zero
-/// value as "swap red/green" for GRB panels; 0 is straight RGB.
+/// Pico All supports six permutations; RS-Key exposes RGB / GRB only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LedColorOrder {
     Rgb,
     Grb,
+    Rbg,
+    Gbr,
+    Brg,
+    Bgr,
 }
 
 impl LedColorOrder {
@@ -245,18 +248,51 @@ impl LedColorOrder {
         match self {
             Self::Rgb => "RGB".into(),
             Self::Grb => crate::i18n::tr("GRB (swap red/green)").into(),
+            Self::Rbg => "RBG".into(),
+            Self::Gbr => "GBR".into(),
+            Self::Brg => "BRG".into(),
+            Self::Bgr => "BGR".into(),
         }
     }
 
-    pub fn value(&self) -> u8 {
+    pub fn value(&self, is_rskey: bool) -> u8 {
         match self {
             Self::Rgb => 0,
-            Self::Grb => 1,
+            Self::Grb => {
+                if is_rskey {
+                    1
+                } else {
+                    2
+                }
+            }
+            Self::Rbg => 1,
+            Self::Gbr => 3,
+            Self::Brg => 4,
+            Self::Bgr => 5,
         }
     }
 
-    pub fn all() -> &'static [Self] {
-        &[Self::Rgb, Self::Grb]
+    pub fn all(is_rskey: bool) -> &'static [Self] {
+        if is_rskey {
+            &[Self::Rgb, Self::Grb]
+        } else {
+            &[
+                Self::Rgb,
+                Self::Rbg,
+                Self::Grb,
+                Self::Gbr,
+                Self::Brg,
+                Self::Bgr,
+            ]
+        }
+    }
+
+    fn row(value: Option<u8>, is_rskey: bool) -> usize {
+        if is_rskey {
+            usize::from(value.unwrap_or(0) != 0)
+        } else {
+            usize::from(value.unwrap_or(0).min(5))
+        }
     }
 }
 
@@ -488,7 +524,7 @@ impl ConfigViewModel {
                 }),
         );
 
-        let orders: Vec<OrderSelectOption> = LedColorOrder::all()
+        let orders: Vec<OrderSelectOption> = LedColorOrder::all(is_rskey)
             .iter()
             .map(|order| OrderSelectOption {
                 order: *order,
@@ -515,11 +551,21 @@ impl ConfigViewModel {
 
         let vid_input = cx.new(|cx| InputState::new(window, cx).default_value(current_vid.clone()));
         let pid_input = cx.new(|cx| InputState::new(window, cx).default_value(current_pid.clone()));
-        let product_name_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(current_product_name.clone()));
+        let product_name_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .localized_placeholder("Firmware default", cx)
+                .default_value(current_product_name.clone())
+        });
         let manufacturer_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .localized_placeholder("VID-derived default", cx)
+                .localized_placeholder(
+                    if is_rskey {
+                        "VID-derived default"
+                    } else {
+                        "Firmware default"
+                    },
+                    cx,
+                )
                 .default_value(current_manufacturer.clone())
         });
 
@@ -542,7 +588,7 @@ impl ConfigViewModel {
 
         // Firmware collapses colour order to a boolean, so map None/0 → RGB (row 0)
         // and any non-zero → GRB (row 1).
-        let initial_order_idx = usize::from(current_led_order.unwrap_or(0) != 0);
+        let initial_order_idx = LedColorOrder::row(current_led_order, is_rskey);
         let led_order_select = cx.new(|cx| {
             SelectState::new(
                 orders,
@@ -581,6 +627,8 @@ impl ConfigViewModel {
         });
 
         let led_level_errors = FormErrors::default();
+        led_level_errors.watch(7, &led_gpio_input, window, cx);
+        led_level_errors.watch(8, &touch_timeout_input, window, cx);
         let led_level_inputs = std::array::from_fn(|i| {
             let input = cx.new(|cx| {
                 InputState::new(window, cx)
@@ -922,7 +970,14 @@ impl ConfigViewModel {
         let final_led_gpio = if trimmed_gpio.is_empty() {
             None
         } else {
-            trimmed_gpio.parse::<u8>().ok().or(current_led_gpio)
+            match trimmed_gpio.parse::<u8>() {
+                Ok(value) => Some(value),
+                Err(_) => {
+                    self.led_level_errors.set(7, crate::i18n::tr("Enter a whole number from 0 to 255, or leave blank for the firmware default."));
+                    self.led_level_errors.valid(window);
+                    return;
+                }
+            }
         };
         if final_led_gpio != current_led_gpio {
             has_changes = true;
@@ -950,9 +1005,8 @@ impl ConfigViewModel {
             has_changes = true;
         }
 
-        // LED colour order: an untouched select preserves the device's value;
-        // firmware treats any non-zero value as GRB, so map by RGB(0)/GRB(1).
-        let init_order_idx = usize::from(current_led_order.unwrap_or(0) != 0);
+        // Preserve untouched values and encode the selected firmware's ordering.
+        let init_order_idx = LedColorOrder::row(current_led_order, is_rskey);
         let sel_order_idx = self
             .led_order_select
             .read(cx)
@@ -960,7 +1014,9 @@ impl ConfigViewModel {
             .map(|p| p.row)
             .unwrap_or(init_order_idx);
         let final_led_order = if sel_order_idx != init_order_idx {
-            LedColorOrder::all().get(sel_order_idx).map(|o| o.value())
+            LedColorOrder::all(is_rskey)
+                .get(sel_order_idx)
+                .map(|o| o.value(is_rskey))
         } else {
             current_led_order
         };
@@ -975,7 +1031,14 @@ impl ConfigViewModel {
         let final_touch_timeout = if trimmed_tt.is_empty() {
             None
         } else {
-            trimmed_tt.parse::<u8>().ok().or(current_touch_timeout)
+            match trimmed_tt.parse::<u8>() {
+                Ok(value) => Some(value),
+                Err(_) => {
+                    self.led_level_errors.set(8, crate::i18n::tr("Enter a whole number from 0 to 255, or leave blank for the firmware default."));
+                    self.led_level_errors.valid(window);
+                    return;
+                }
+            }
         };
         if final_touch_timeout != current_touch_timeout {
             has_changes = true;
@@ -1184,6 +1247,11 @@ impl ConfigViewModel {
         let device = self.device.read(cx);
         let config = device.status.as_ref().map(|s| &s.config);
 
+        let is_rskey = device
+            .status
+            .as_ref()
+            .is_some_and(|s| s.firmware_type == crate::hal::types::FirmwareType::RSKey);
+
         let new_vid = config
             .map(|c| c.vid.clone())
             .unwrap_or_else(|| "CAFE".into());
@@ -1227,7 +1295,10 @@ impl ConfigViewModel {
         // Resolve the select rows while `config` is still borrowed — all the
         // `.update()` calls below need `cx` mutably, so no config read may outlive them.
         let new_driver_idx = Self::driver_row(config.and_then(|c| c.led_driver));
-        let new_order_idx = usize::from(config.and_then(|c| c.led_order).unwrap_or(0) != 0);
+        let new_order_idx = LedColorOrder::row(config.and_then(|c| c.led_order), is_rskey);
+        let new_manufacturer = config
+            .map(|c| c.manufacturer_name.clone())
+            .unwrap_or_default();
 
         let preset = UsbIdentityPreset::from_vid_pid(&new_vid, &new_pid);
         self.is_custom_vendor = preset == UsbIdentityPreset::Custom;
@@ -1254,6 +1325,9 @@ impl ConfigViewModel {
             .update(cx, |input, cx| input.set_value(new_pid, window, cx));
         self.product_name_input
             .update(cx, |input, cx| input.set_value(new_product, window, cx));
+        self.manufacturer_input.update(cx, |input, cx| {
+            input.set_value(new_manufacturer, window, cx)
+        });
         self.led_gpio_input
             .update(cx, |input, cx| input.set_value(new_gpio, window, cx));
         self.touch_timeout_input
@@ -1282,6 +1356,20 @@ impl ConfigViewModel {
 #[cfg(test)]
 mod tests {
     use super::ConfigViewModel;
+    #[test]
+    fn colour_order_uses_the_firmware_encoding() {
+        use super::LedColorOrder;
+        assert_eq!(LedColorOrder::Grb.value(false), 2);
+        assert_eq!(LedColorOrder::Grb.value(true), 1);
+        for is_rskey in [true, false] {
+            for (row, order) in LedColorOrder::all(is_rskey).iter().enumerate() {
+                assert_eq!(
+                    LedColorOrder::row(Some(order.value(is_rskey)), is_rskey),
+                    row
+                );
+            }
+        }
+    }
 
     #[test]
     fn driver_row_maps_none_to_sentinel_and_drivers_after() {

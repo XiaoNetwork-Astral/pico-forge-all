@@ -1308,7 +1308,23 @@ fn validate_fido_config_changes(
         return Ok(());
     }
 
-    // RS-Key: 0x41 CONFIG_WRITE supports the full PHY TLV — no field restrictions.
+    if !firmware.supports_rs_key_vendor_command()
+        && (config.product_name.is_some()
+            || config.manufacturer_name.is_some()
+            || config.touch_timeout.is_some()
+            || config.led_driver.is_some()
+            || config.enable_secp256k1.is_some()
+            || config.raw_curves_mask.is_some()
+            || config.led_order.is_some()
+            || config.enabled_usb_itf.is_some()
+            || config.led_num.is_some())
+    {
+        return Err(PFError::Device(
+            "Some settings are not supported over legacy FIDO. Use Rescue mode to apply them."
+                .into(),
+        ));
+    }
+    // RS-Key: 0x41 CONFIG_WRITE supports the full PHY TLV.
     Ok(())
 }
 
@@ -1384,16 +1400,6 @@ fn write_legacy_hardware_config(
             VendorConfigCommand::PhysicalOptions,
             Value::Integer(opts as i128),
         )?;
-    }
-
-    if config.touch_timeout.is_some()
-        || config.led_driver.is_some()
-        || config.enable_secp256k1.is_some()
-    {
-        log::warn!(
-            "Legacy hardware config does not support touch_timeout, led_driver, or enable_secp256k1 \
-             fields. These were silently ignored. If your device supports them, file a feature request."
-        );
     }
 
     Ok("Configuration updated successfully! Unplug and re-plug the device to apply VID/PID changes.".to_string())
@@ -2383,16 +2389,19 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_fido_config_changes_accepts_all_common_fields_in_legacy_mode() {
-        // With legacy vendor support, all fields are accepted — no LkOne-style
-        // VID/PID-only restriction exists for the CONFIG_WRITE path.
+    fn test_validate_fido_config_changes_rejects_ignored_legacy_fields() {
         let mut config = empty_config_input();
         config.led_gpio = Some(25);
         config.product_name = Some("Pico Key".to_string());
         config.touch_timeout = Some(30);
 
         let fw = AnyFirmware::new_with_legacy(FirmwareType::PicoFido, "7.6", true);
-        assert!(validate_fido_config_changes(&config, &fw).is_ok());
+        assert!(validate_fido_config_changes(&config, &fw).is_err());
+        config.product_name = None;
+        assert!(validate_fido_config_changes(&config, &fw).is_err());
+        config.touch_timeout = None;
+        config.manufacturer_name = Some("My manufacturer".into());
+        assert!(validate_fido_config_changes(&config, &fw).is_err());
     }
 
     #[test]

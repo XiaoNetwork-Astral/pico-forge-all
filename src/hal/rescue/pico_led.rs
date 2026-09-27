@@ -25,6 +25,30 @@ pub fn block(raw: &[u8], wanted: u8) -> Option<&[u8]> {
     }
     None
 }
+/// Compare saved PHY records, not USB descriptors cached until the next reconnect.
+pub fn verify_phy_write(expected: &[u8], actual: &[u8]) -> Result<(), PFError> {
+    let mut pos = 0;
+    while pos < expected.len() {
+        let header = expected
+            .get(pos..pos + 2)
+            .ok_or_else(|| PFError::Device("Truncated PHY configuration.".into()))?;
+        let tag = header[0];
+        let len = header[1] as usize;
+        let value = expected
+            .get(pos + 2..pos + 2 + len)
+            .ok_or_else(|| PFError::Device("Truncated PHY configuration.".into()))?;
+        let saved = block(actual, tag);
+        // Empty names deliberately remove an override; firmware omits that record.
+        let cleared_name = matches!(tag, 0x09 | 0x0f) && value == [0] && saved.is_none();
+        if !cleared_name && saved != Some(value) {
+            return Err(PFError::Device(
+                "Device configuration readback differs. The changes were not fully saved; update the firmware and retry.".into(),
+            ));
+        }
+        pos += 2 + len;
+    }
+    Ok(())
+}
 pub fn parse(raw: &[u8]) -> Option<LedStatusConfig> {
     let b = block(raw, 0x10)?;
     if b.len() != 10 || b[0] != 1 || b[1] > 1 || (0..4).any(|i| b[2 + i * 2] > 7) {
@@ -133,6 +157,18 @@ fn update(raw: &mut [u8], config: &LedStatusConfig) -> Result<(), PFError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn phy_write_detects_silent_drops_and_changed_values() {
+        let expected = [0x0f, 4, b'b', b'f', b'k', 0, 0x08, 1, 60, 0x0c, 2, 3, 2];
+        assert!(verify_phy_write(&expected, &expected).is_ok());
+        assert!(verify_phy_write(&expected, &expected[6..]).is_err());
+        let mut changed = expected;
+        changed[8] = 30;
+        assert!(verify_phy_write(&expected, &changed).is_err());
+        assert!(verify_phy_write(&[0x09, 1, 0, 0x0f, 1, 0], &[]).is_ok());
+        assert!(verify_phy_write(&[0x09, 1, 0], &[0x09, 2, b'x', 0]).is_err());
+        assert!(verify_phy_write(&[0x0f, 32, b'x'], &[]).is_err());
+    }
     #[test]
     fn per_status_modes_roundtrip_and_compatibility() {
         let mut raw = vec![

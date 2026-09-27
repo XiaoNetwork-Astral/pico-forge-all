@@ -107,7 +107,10 @@ impl ConfigViewModel {
                             Input::new(&self.led_gpio_input)
                                 .bg(rgb(0x222225))
                                 .disabled(hardware_config_disabled),
-                        ),
+                        )
+                        .when_some(self.led_level_errors.message(7), |field, error| {
+                            field.child(div().text_sm().text_color(rgb(0xef4444)).child(error))
+                        }),
                 )
                 .child(
                     v_flex().gap_2().child(crate::i18n::tr("LED Driver")).child(
@@ -157,7 +160,10 @@ impl ConfigViewModel {
                     Input::new(&self.touch_timeout_input)
                         .bg(rgb(0x222225))
                         .disabled(is_fido),
-                ),
+                )
+                .when_some(self.led_level_errors.message(8), |field, error| {
+                    field.child(div().text_sm().text_color(rgb(0xef4444)).child(error))
+                }),
         );
 
         Card::new()
@@ -581,3 +587,4 @@ impl Render for ConfigViewModel {
         )
     }
 }
+use gpui::prelude::FluentBuilder;

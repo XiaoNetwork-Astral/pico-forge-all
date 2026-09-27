@@ -1,4 +1,8 @@
 {
+  "USB names cannot contain a NUL character.": "USB 名称不能包含空字符（NUL）",
+  "Device configuration readback differs. The changes were not fully saved; update the firmware and retry.": "读取到的配置与提交内容不一致，修改未完整保存；请更新固件后重试",
+  "Enter a whole number from 0 to 255, or leave blank for the firmware default.": "请输入 0 到 255 的整数，或留空使用固件默认值",
+  "Some settings are not supported over legacy FIDO. Use Rescue mode to apply them.": "旧版 FIDO 通道不支持部分设置，请使用 Rescue 通道配置",
   " (blocked)": "（已锁定）",
   " (default)": "（默认）",
   " (not initialized)": "（未初始化）",

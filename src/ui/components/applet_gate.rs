@@ -57,7 +57,7 @@ impl AppletGate {
             )),
             Self::Disabled(name) => Some((
                 crate::i18n::tr("Applet disabled"),
-                crate::i18n::format("{0} is turned off. Enable it in Compose → USB Applications.", &[format!("{}", name)]),
+                crate::i18n::format("{0} is turned off. Enable it above.", &[format!("{}", name)]),
             )),
             Self::ClientUnsupported(name) => Some((
                 crate::i18n::tr("Not yet supported"),

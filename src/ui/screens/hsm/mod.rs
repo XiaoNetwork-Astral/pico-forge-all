@@ -921,17 +921,6 @@ impl Render for HsmViewModel {
                     )
                     .child(details),
             );
-            if self
-                .info
-                .as_ref()
-                .is_some_and(|i| i.initialized == Some(false))
-            {
-                body = body.child(Card::new().title(crate::i18n::tr("Set up HSM"))
-                    .description(crate::i18n::tr("Set your PINs before creating or importing keys"))
-                    .child(div().text_sm().child(crate::i18n::tr("1. Set a user PIN and a security officer PIN. 2. Generate a key; its ID is assigned automatically. 3. Use the key from its row in the Keys list. HSM has no default PIN before setup.")))
-                    .child(standard("hsm-setup", cx).label(crate::i18n::tr("Set up HSM")).disabled(self.loading)
-                        .on_click(cx.listener(|this, _, w, cx| this.open_action(Action::Setup, w, cx)))));
-            }
             body = body
                 .child(self.stored_list(true, cx))
                 .child(self.stored_list(false, cx))

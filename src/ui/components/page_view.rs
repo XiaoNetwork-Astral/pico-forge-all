@@ -7,6 +7,20 @@ use gpui_component::{StyledExt, Theme, v_flex};
 pub struct PageView;
 
 impl PageView {
+    pub fn build_with_apps(
+        title: impl Into<SharedString>,
+        subtitle: impl Into<SharedString>,
+        content: impl IntoElement,
+        theme: &Theme,
+        controls: Option<AnyElement>,
+    ) -> impl IntoElement {
+        Self::build(
+            title,
+            subtitle,
+            v_flex().gap_6().children(controls).child(content),
+            theme,
+        )
+    }
     pub fn build(
         title: impl Into<SharedString>,
         subtitle: impl Into<SharedString>,

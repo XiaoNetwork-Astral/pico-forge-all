@@ -1,8 +1,10 @@
 //! Accounts (OATH) screen rendering.
 
+use crate::ui::components::application_switch;
 use crate::ui::components::button::PFIconButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
+use crate::ui::models::device::USB_CAP_OATH;
 use crate::ui::models::device::oath;
 use crate::ui::screens::accounts::view_model::AccountsViewModel;
 use gpui::*;
@@ -172,8 +174,14 @@ impl Render for AccountsViewModel {
 
         if let Some((heading, body)) = self.gate(cx).message() {
             let theme = cx.theme();
-            return PageView::build(TITLE, SUBTITLE, empty_state(heading, body, theme), theme)
-                .into_any_element();
+            return PageView::build_with_apps(
+                TITLE,
+                SUBTITLE,
+                empty_state(heading, body, theme),
+                theme,
+                application_switch::render(&self.device, &[USB_CAP_OATH], cx),
+            )
+            .into_any_element();
         }
 
         if self.needs_password && !self.loaded {
@@ -203,7 +211,14 @@ impl Render for AccountsViewModel {
                         ))
                         .child(unlock),
                 );
-            return PageView::build(TITLE, SUBTITLE, card, theme).into_any_element();
+            return PageView::build_with_apps(
+                TITLE,
+                SUBTITLE,
+                card,
+                theme,
+                application_switch::render(&self.device, &[USB_CAP_OATH], cx),
+            )
+            .into_any_element();
         }
 
         // Build rows first (mutable cx), then the chrome.
@@ -303,6 +318,13 @@ impl Render for AccountsViewModel {
             );
 
         let content = v_flex().gap_6().child(accounts_card).child(reset_card);
-        PageView::build(TITLE, SUBTITLE, content, theme).into_any_element()
+        PageView::build_with_apps(
+            TITLE,
+            SUBTITLE,
+            content,
+            theme,
+            application_switch::render(&self.device, &[USB_CAP_OATH], cx),
+        )
+        .into_any_element()
     }
 }

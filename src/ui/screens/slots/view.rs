@@ -1,8 +1,10 @@
 //! Slots (OTP) screen rendering.
 
+use crate::ui::components::application_switch;
 use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
+use crate::ui::models::device::USB_CAP_OTP;
 use crate::ui::models::device::otp;
 use crate::ui::screens::slots::view_model::SlotsViewModel;
 use gpui::*;
@@ -117,8 +119,14 @@ impl Render for SlotsViewModel {
 
         if let Some((heading, body)) = self.gate(cx).message() {
             let theme = cx.theme();
-            return PageView::build(TITLE, SUBTITLE, empty_state(heading, body, theme), theme)
-                .into_any_element();
+            return PageView::build_with_apps(
+                TITLE,
+                SUBTITLE,
+                empty_state(heading, body, theme),
+                theme,
+                application_switch::render(&self.device, &[USB_CAP_OTP], cx),
+            )
+            .into_any_element();
         }
 
         let count = self.slot_count(cx);
@@ -157,6 +165,13 @@ impl Render for SlotsViewModel {
             .child(v_flex().gap_2().children(cards));
 
         let content = v_flex().gap_6().child(slots_card);
-        PageView::build(TITLE, SUBTITLE, content, theme).into_any_element()
+        PageView::build_with_apps(
+            TITLE,
+            SUBTITLE,
+            content,
+            theme,
+            application_switch::render(&self.device, &[USB_CAP_OTP], cx),
+        )
+        .into_any_element()
     }
 }

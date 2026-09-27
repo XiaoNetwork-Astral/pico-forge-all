@@ -85,6 +85,15 @@ fn piv_key_len_ok(algo: u8, len: usize) -> bool {
     matches!((algo, len), (0x08, 16) | (0x0A, 24) | (0x0C, 32))
 }
 
+fn parse_new_mgm(algo: u8, value: &str) -> Result<Vec<u8>, &'static str> {
+    let key =
+        hex::decode(value.trim()).map_err(|_| "Enter hexadecimal pairs using 0–9 and A–F.")?;
+    if !piv_key_len_ok(algo, key.len()) {
+        return Err("New key length must match the algorithm (16/24/32 bytes)");
+    }
+    Ok(key)
+}
+
 /// Resolve a management-auth dialog input to an [`MgmAuth`], or emit a validation
 /// toast and return `None`. On a `--protect`'d card the field holds the PIN; else
 /// a hex management key. `algo` is the card's read-back management-key algorithm.
@@ -813,6 +822,8 @@ impl PivViewModel {
         let new = cx.new(|cx| gpui_component::input::InputState::new(window, cx));
         let algo_sel = select_state(window, cx, OPT_MGM_ALGO, 0);
         let touch_sel = select_state(window, cx, OPT_MGM_TOUCH, 0);
+        let errors = FormErrors::default();
+        errors.watch(0, &new, window, cx);
         let view = cx.entity().downgrade();
 
         let gen_key = {
@@ -826,30 +837,25 @@ impl PivViewModel {
             })
         };
         let submit = {
+            let errors = errors.clone();
             let cur = cur.clone();
             let new = new.clone();
             let algo_sel = algo_sel.clone();
             let touch_sel = touch_sel.clone();
             let view = view.clone();
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
-                let notify = |cx: &mut App, msg: &str| {
-                    let _ =
-                        view.update(cx, |_, cx| cx.emit(PivEvent::Notification(msg.to_string())));
+                errors.clear();
+                let new_algo = selected_key(&algo_sel, OPT_MGM_ALGO, cx);
+                let new_key = match parse_new_mgm(new_algo, &new.read(cx).text().to_string()) {
+                    Ok(key) => key,
+                    Err(message) => {
+                        errors.set(0, crate::i18n::tr(message));
+                        errors.valid(window);
+                        return;
+                    }
                 };
                 let Some(current) = resolve_mgm_auth(&cur, protected, cur_algo, &view, cx) else {
                     return;
-                };
-                let new_algo = selected_key(&algo_sel, OPT_MGM_ALGO, cx);
-                let new_key = match hex::decode(new.read(cx).text().to_string().trim()) {
-                    Ok(k) if piv_key_len_ok(new_algo, k.len()) => k,
-                    _ => {
-                        return notify(
-                            cx,
-                            crate::i18n::tr(
-                                "New key length must match the algorithm (16/24/32 bytes)",
-                            ),
-                        );
-                    }
                 };
                 let touch = selected_key(&touch_sel, OPT_MGM_TOUCH, cx) == 1;
                 window.close_dialog(cx);
@@ -868,7 +874,7 @@ impl PivViewModel {
                 });
             })
         };
-        window.open_dialog(cx, move |dialog, _w, _| {
+        window.open_dialog(cx, move |dialog, _w, cx| {
             let cur = cur.clone();
             let new = new.clone();
             let algo_sel = algo_sel.clone();
@@ -908,21 +914,22 @@ impl PivViewModel {
                                 .child(field(crate::i18n::tr("New algorithm"), &algo_sel))
                                 .child(field(crate::i18n::tr("Touch"), &touch_sel)),
                         )
-                        .child(crate::i18n::tr("New key (hex)"))
                         .child(
                             gpui_component::h_flex()
                                 .gap_2()
-                                .items_center()
+                                .items_start()
+                                .child(gpui_component::v_flex().flex_1().child(errors.field(
+                                    0,
+                                    crate::i18n::tr("New key (hex)"),
+                                    &new,
+                                    true,
+                                )))
                                 .child(
-                                    gpui_component::v_flex()
-                                        .flex_1()
-                                        .child(gpui_component::input::Input::new(&new)),
-                                )
-                                .child(
-                                    gpui_component::button::Button::new("gen-mgm")
-                                        .label(crate::i18n::tr("Generate"))
-                                        .outline()
-                                        .on_click(move |_, window, cx| gen_key(window, cx)),
+                                    gpui::div().pt_8().child(
+                                        crate::ui::components::button::standard("gen-mgm", cx)
+                                            .label(crate::i18n::tr("Generate"))
+                                            .on_click(move |_, window, cx| gen_key(window, cx)),
+                                    ),
                                 ),
                         ),
                 )
@@ -1366,4 +1373,22 @@ fn der_to_pem(der: &[u8]) -> String {
     }
     out.push_str("-----END CERTIFICATE-----\n");
     out
+}
+
+#[cfg(test)]
+mod management_key_validation_tests {
+    #[core::prelude::v1::test]
+    fn rejects_malformed_hex_and_algorithm_length_mismatches() {
+        for invalid in ["123", "gg", "", "aabb"] {
+            assert!(super::parse_new_mgm(0x0A, invalid).is_err());
+        }
+        for (algorithm, length) in [(0x08, 16), (0x0A, 24), (0x0C, 32)] {
+            let key = "aF".repeat(length);
+            assert_eq!(
+                super::parse_new_mgm(algorithm, &key).unwrap(),
+                vec![0xaf; length]
+            );
+            assert!(super::parse_new_mgm(algorithm, &(key + "00")).is_err());
+        }
+    }
 }

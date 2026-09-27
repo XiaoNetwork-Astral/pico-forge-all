@@ -265,6 +265,18 @@ impl OpenPgpViewModel {
                 errors.clear();
                 errors.required(0, label_a, &av);
                 errors.required(1, label_b, &bv);
+                let reference = if label_b == crate::i18n::tr("New admin PIN")
+                    || label_b == crate::i18n::tr("New reset code")
+                {
+                    openpgp::PW3
+                } else {
+                    openpgp::PW1
+                };
+                if !bv.is_empty() {
+                    if let Err(error) = openpgp::validate_new_pin(reference, &bv) {
+                        errors.set(1, crate::i18n::text(&error.to_string()));
+                    }
+                }
                 if !errors.valid(window) {
                     return;
                 }

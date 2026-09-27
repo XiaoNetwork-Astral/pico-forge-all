@@ -1,3 +1,4 @@
+use crate::ui::components::application_switch;
 use crate::ui::components::{
     button::{PFButton, PFIconButton},
     card::Card,
@@ -5,6 +6,7 @@ use crate::ui::components::{
     page_view::PageView,
 };
 use crate::ui::models::device::{DeviceMethod, StoredCredential};
+use crate::ui::models::device::{USB_CAP_FIDO2, USB_CAP_U2F};
 use crate::ui::screens::passkeys::view_model::{PasskeysEvent, PasskeysViewModel};
 use directories::UserDirs;
 use gpui::prelude::FluentBuilder;
@@ -712,12 +714,11 @@ impl Render for PasskeysViewModel {
 
         if !device_connected {
             let theme = cx.theme();
-            return PageView::build(
+            return PageView::build_with_apps(
                 crate::i18n::tr("Passkeys"),
                 crate::i18n::tr("Manage your security PIN and the FIDO credentials (passkeys) stored on your device."),
                 self.render_no_device(theme).into_any_element(),
-                theme,
-            )
+                theme, application_switch::render(&self.device, &[USB_CAP_FIDO2, USB_CAP_U2F], cx))
             .into_any_element();
         }
 
@@ -728,14 +729,25 @@ impl Render for PasskeysViewModel {
             .unwrap_or(false)
             || device.fido_info.is_some();
 
+        if !device.applet_enabled(USB_CAP_FIDO2) {
+            let theme = cx.theme();
+            return PageView::build_with_apps(
+                crate::i18n::tr("Passkeys"),
+                crate::i18n::tr("Manage your security PIN and the FIDO credentials (passkeys) stored on your device."),
+                crate::ui::components::applet_gate::empty_state(
+                    crate::i18n::tr("Applet disabled"),
+                    crate::i18n::format("{0} is turned off. Enable it above.", &["FIDO2".into()]), theme),
+                theme,
+                application_switch::render(&self.device, &[USB_CAP_FIDO2, USB_CAP_U2F], cx),
+            ).into_any_element();
+        }
         if !has_fido {
             let theme = cx.theme();
-            return PageView::build(
+            return PageView::build_with_apps(
                 crate::i18n::tr("Passkeys"),
                 crate::i18n::tr("Manage your security PIN and the FIDO credentials (passkeys) stored on your device."),
                 self.render_not_supported(theme).into_any_element(),
-                theme,
-            )
+                theme, application_switch::render(&self.device, &[USB_CAP_FIDO2, USB_CAP_U2F], cx))
             .into_any_element();
         }
 
@@ -751,12 +763,11 @@ impl Render for PasskeysViewModel {
         div()
             .size_full()
             .relative()
-            .child(PageView::build(
+            .child(PageView::build_with_apps(
                 crate::i18n::tr("Passkeys"),
                 crate::i18n::tr("Manage your security PIN and the FIDO credentials (passkeys) stored on your device."),
                 content.into_any_element(),
-                theme,
-            ))
+                theme, application_switch::render(&self.device, &[USB_CAP_FIDO2, USB_CAP_U2F], cx)))
             .into_any_element()
     }
 }

@@ -74,6 +74,7 @@ pub struct DeviceRepo {
     pub management_apps: Option<types::ManagementAppConfig>,
     pub error: Option<String>,
     pub loading: bool,
+    pub applying_apps: bool,
     pub device_changed: bool,
     /// Handle to the hot-plug watcher task; dropped (cancelled) with the repo.
     hotplug_watch: Option<Task<()>>,
@@ -89,6 +90,7 @@ impl DeviceRepo {
             management_apps: None,
             error: None,
             loading: false,
+            applying_apps: false,
             device_changed: false,
             hotplug_watch: None,
         }
@@ -433,6 +435,29 @@ impl DeviceRepo {
             .as_ref()
             .map(|m| m.usb_enabled & cap != 0)
             .unwrap_or(true)
+    }
+
+    pub fn set_application_blocking(
+        method: DeviceMethod,
+        serial: String,
+        cap: u16,
+        enabled: bool,
+        pin: Option<String>,
+    ) -> Result<FreshDeviceState, crate::error::PFError> {
+        let current = io::read_device_details()?;
+        if current.info.serial != serial {
+            return Err(crate::error::PFError::Device(
+                "Device changed. Refresh and try again.".into(),
+            ));
+        }
+        let apps = io::read_management_config(method.clone())?;
+        let mask = if enabled {
+            apps.usb_enabled | cap
+        } else {
+            apps.usb_enabled & !cap
+        };
+        io::write_management_config(method, mask, pin)?;
+        Self::read_device_state_blocking()
     }
 
     /// Whether the CCID/smart-card USB interface is on (lenient when unknown).

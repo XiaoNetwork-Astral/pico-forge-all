@@ -1,23 +1,15 @@
 Updates:
 
-- Added Windows x86/x64 portable ZIPs and installers with bundled picotool; `portable.txt` keeps settings and data beside the executable
-- Added an administrator prompt and quick restart for reading restricted device information
-- Fixed update-mode detection and premature timeouts; controls stay disabled until the device reconnects after flashing
-- Fixed signing and inspection triggering update mode and duplicate signing-key checks; improved firmware validation and update confirmation
-- Added Pico All management for PIV, OpenPGP, SmartCard-HSM and Audit
-- Added searchable key, object, slot and security-event lists; HSM objects accept text or files and receive IDs automatically
-- Added English and Simplified Chinese, IANA time zones and calendar timestamps for Audit events
-- Improved PIN validation and factory-default handling, reset flows and per-status light controls
+- Show inline errors for invalid PIV management keys and OpenPGP PIN lengths; use the standard Generate button style
+- Move feature switches to Passkeys, Accounts, Slots, PIV and OpenPGP, with descriptions for U2F and OTP
+- Remove the HSM setup guide and correct Audit log-reading confirmation prompts
+- Windows x86/x64 portable ZIPs and installers include picotool
 
 ---
 
 更新内容：
 
-- 提供 Windows x86／x64 绿色版与安装版，内置 picotool；通过 `portable.txt` 将设置和数据保存在程序目录
-- 新增管理员权限提示和快捷重启，方便读取受限设备信息
-- 修复更新模式切换失败及提前超时；刷写后等待设备重连，再恢复按钮操作
-- 修复签名和检查意外触发更新模式、签名密钥重复匹配，改进固件校验和刷写确认
-- 新增 Pico All 的 PIV、OpenPGP、SmartCard-HSM 和审计管理
-- 密钥、对象、槽位和安全事件可搜索；HSM 对象支持文本或文件导入，ID 自动分配
-- 新增中英文界面、IANA 时区列表和审计事件日历时间
-- 改进 PIN 必填校验与默认值处理、重置流程和各状态的指示灯设置
+- PIV 管理密钥格式及 OpenPGP PIN 长度错误直接显示在输入框下方；统一生成按钮样式
+- 功能开关移入通行密钥、账户、槽位、PIV 和 OpenPGP 页面；补充 U2F 和 OTP 的用途说明
+- 删除 HSM 初始化引导；修正审计读取日志的按键提示
+- 提供内置 picotool 的 Windows x86／x64 绿色版和安装版

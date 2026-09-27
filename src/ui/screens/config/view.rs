@@ -1,8 +1,5 @@
 use crate::ui::components::{card::Card, page_view::PageView};
-use crate::ui::models::device::{
-    DeviceMethod, FirmwareType, LedColor, USB_CAP_FIDO2, USB_CAP_OATH, USB_CAP_OPENPGP,
-    USB_CAP_OTP, USB_CAP_PIV, USB_CAP_U2F,
-};
+use crate::ui::models::device::{DeviceMethod, FirmwareType, LedColor};
 use crate::ui::screens::config::view_model::ConfigViewModel;
 use gpui::*;
 use gpui_component::{button::*, input::*, select::*, switch::*, *};
@@ -388,66 +385,6 @@ impl ConfigViewModel {
         card
     }
 
-    fn render_rskey_apps_card(
-        &mut self,
-        cx: &mut Context<Self>,
-        is_fido: bool,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let mut rows = v_flex().gap_4();
-
-        let apps = [
-            ("FIDO2", USB_CAP_FIDO2),
-            ("OATH", USB_CAP_OATH),
-            ("PIV", USB_CAP_PIV),
-            (crate::i18n::tr("OpenPGP"), USB_CAP_OPENPGP),
-            ("U2F", USB_CAP_U2F),
-            ("OTP", USB_CAP_OTP),
-        ];
-
-        for (name, cap) in apps {
-            let is_supported = (self.usb_apps_supported & cap) != 0;
-            let is_enabled = (self.usb_apps_enabled & cap) != 0;
-
-            let toggle_listener = cx.listener(move |this, checked, _, cx| {
-                if *checked {
-                    this.usb_apps_enabled |= cap;
-                } else {
-                    this.usb_apps_enabled &= !cap;
-                }
-                cx.notify();
-            });
-
-            rows =
-                rows.child(
-                    h_flex()
-                        .items_center()
-                        .justify_between()
-                        .child(v_flex().gap_0p5().child(name).child(
-                            div().text_sm().text_color(theme.muted_foreground).child(
-                                if is_supported {
-                                    crate::i18n::tr("Supported")
-                                } else {
-                                    crate::i18n::tr("Not Supported by Firmware")
-                                },
-                            ),
-                        ))
-                        .child(
-                            Switch::new(gpui::SharedString::from(format!("app-toggle-{}", cap)))
-                                .checked(is_enabled)
-                                .disabled(is_fido || !is_supported)
-                                .on_click(toggle_listener),
-                        ),
-                );
-        }
-
-        Card::new()
-            .title(crate::i18n::tr("USB Applications"))
-            .description(crate::i18n::tr("Enable or disable specific USB features"))
-            .icon(Icon::default().path("icons/microchip.svg"))
-            .child(rows)
-    }
-
     fn render_rskey_usb_itf_card(
         &mut self,
         cx: &mut Context<Self>,
@@ -602,9 +539,7 @@ impl Render for ConfigViewModel {
         // No curves card: the firmware ignores the phy ENABLED_CURVES tag
         // (curve support is compile-time), so exposing it would only mislead.
         if is_rskey || status.as_ref().map(|s| &s.firmware_type) == Some(&FirmwareType::PicoAll) {
-            inner = inner
-                .child(self.render_rskey_apps_card(cx, false))
-                .child(self.render_rskey_usb_itf_card(cx, false));
+            inner = inner.child(self.render_rskey_usb_itf_card(cx, false));
         }
 
         inner = inner.child(led_card);

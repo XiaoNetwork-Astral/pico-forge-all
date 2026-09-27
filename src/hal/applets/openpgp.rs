@@ -342,6 +342,21 @@ fn str_of(v: &[u8]) -> String {
 
 // ── PIN management ──────────────────────────────────────────────────────────
 
+pub fn validate_new_pin(reference: u8, pin: &str) -> Result<(), PFError> {
+    let minimum = if reference == PW1 { 6 } else { 8 };
+    if !(minimum..=127).contains(&pin.len()) {
+        return Err(PFError::Device(
+            if reference == PW1 {
+                "OpenPGP user PIN must be 6–127 bytes."
+            } else {
+                "OpenPGP admin PIN or reset code must be 8–127 bytes."
+            }
+            .into(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn verify_pin(session: &CcidSession, reference: u8, pin: &str) -> Result<(), PFError> {
     session.transceive_full(&Apdu::write(
         CLA_ISO,
@@ -361,6 +376,7 @@ pub fn change_pin(
     old: &str,
     new: &str,
 ) -> Result<(), PFError> {
+    validate_new_pin(reference, new)?;
     let mut body = old.as_bytes().to_vec();
     body.extend_from_slice(new.as_bytes());
     session.transceive_full(&Apdu::write(
@@ -375,6 +391,7 @@ pub fn change_pin(
 
 /// Unblock PW1 with the resetting code (`RC ‖ new_pw1`).
 pub fn unblock_with_rc(session: &CcidSession, rc: &str, new_pw1: &str) -> Result<(), PFError> {
+    validate_new_pin(PW1, new_pw1)?;
     let mut body = rc.as_bytes().to_vec();
     body.extend_from_slice(new_pw1.as_bytes());
     let (_, sw) = session.transceive(&Apdu::write(CLA_ISO, INS_RESET_RETRY, 0x00, PW1, &body))?;
@@ -391,6 +408,7 @@ pub fn unblock_with_rc(session: &CcidSession, rc: &str, new_pw1: &str) -> Result
 
 /// Unblock PW1 using a verified admin PIN (call `verify_pin(PW3)` first).
 pub fn unblock_with_admin(session: &CcidSession, new_pw1: &str) -> Result<(), PFError> {
+    validate_new_pin(PW1, new_pw1)?;
     session.transceive_full(&Apdu::write(
         CLA_ISO,
         INS_RESET_RETRY,
@@ -598,5 +616,20 @@ mod default_metadata_tests {
         for malformed in [&[][..], &[1], &[2, 3], &[1, 4], &[1, 3, 0]] {
             assert_eq!(parse_pin_defaults(malformed), None);
         }
+    }
+}
+
+#[cfg(test)]
+mod pin_validation_tests {
+    use super::*;
+    #[test]
+    fn rejects_invalid_new_pins_before_sending_a_change() {
+        assert!(validate_new_pin(PW3, "1234567").is_err());
+        assert!(validate_new_pin(PW3, "12345678").is_ok());
+        assert!(validate_new_pin(PW1, "12345").is_err());
+        assert!(validate_new_pin(PW1, "123456").is_ok());
+        assert!(validate_new_pin(PW3, &"a".repeat(127)).is_ok());
+        assert!(validate_new_pin(PW3, &"a".repeat(128)).is_err());
+        assert!(validate_new_pin(PW3, &"汉".repeat(43)).is_err());
     }
 }

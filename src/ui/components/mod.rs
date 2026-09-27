@@ -14,4 +14,5 @@ pub mod tag;
 pub mod information;
 pub mod notice;
 
+pub mod application_switch;
 pub mod collection;

@@ -324,8 +324,22 @@ impl AuditViewModel {
             return;
         }
         self.loading = true;
+        let needs_touch = self
+            .device
+            .read(cx)
+            .fido_info
+            .as_ref()
+            .and_then(|f| f.options.get("clientPin").copied())
+            == Some(false);
         let _ = status.update(cx, |d, cx| {
-            d.set_loading(crate::ui::components::copy::CONFIRM_ON_DEVICE, cx)
+            d.set_loading(
+                if needs_touch {
+                    crate::ui::components::copy::CONFIRM_ON_DEVICE
+                } else {
+                    crate::i18n::tr("Reading log")
+                },
+                cx,
+            )
         });
         cx.notify();
         let weak = cx.entity().downgrade();

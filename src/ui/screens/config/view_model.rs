@@ -343,8 +343,6 @@ pub struct ConfigViewModel {
     pub(super) led_status_brightness: [u8; 7],
     pub(super) led_level_inputs: [Entity<InputState>; 7],
     pub(super) led_level_errors: FormErrors,
-    pub(super) usb_apps_supported: u16,
-    pub(super) usb_apps_enabled: u16,
     pub(super) enabled_usb_itf: Option<u8>,
 
     // Curve toggles — initialized from raw_curves_mask, rebuilt into mask on save.
@@ -456,13 +454,6 @@ impl ConfigViewModel {
                     led_status_brightness[4 + i] = brightness;
                 }
             }
-        }
-
-        let mut usb_apps_supported = 0;
-        let mut usb_apps_enabled = 0;
-        if let Some(apps) = &device_read.management_apps {
-            usb_apps_supported = apps.usb_supported;
-            usb_apps_enabled = apps.usb_enabled;
         }
 
         let vendors: Vec<VendorSelectOption> = UsbIdentityPreset::all()
@@ -629,8 +620,6 @@ impl ConfigViewModel {
             led_status_brightness,
             led_level_inputs,
             led_level_errors,
-            usb_apps_supported,
-            usb_apps_enabled,
             enabled_usb_itf,
             _task: None,
         }
@@ -890,7 +879,6 @@ impl ConfigViewModel {
         let current_product_name = status.config.product_name.clone();
         let current_manufacturer = status.config.manufacturer_name.clone();
         let current_led = device.led_status.clone();
-        let current_apps_enabled = device.management_apps.as_ref().map(|a| a.usb_enabled);
         let current_led_gpio = status.config.led_gpio;
         let current_led_driver = status.config.led_driver;
         let current_led_brightness = status.config.led_brightness;
@@ -1045,9 +1033,7 @@ impl ConfigViewModel {
             led_num,
         };
 
-        // The Status LED Colors and USB Applications cards write their own device
-        // targets (EF_LED_CONF / the management mask); fold them into this one Save
-        // so the screen has a single Apply, not a mix of per-card buttons.
+        // Save LED configuration alongside the changed hardware settings.
         // Error also controls timeouts, including older seven-state firmware.
         self.led_status_colors[5] = self.led_status_colors[6];
         self.led_status_brightness[5] = self.led_status_brightness[6];
@@ -1071,9 +1057,8 @@ impl ConfigViewModel {
             }
             None => false,
         };
-        let apps_changed = current_apps_enabled.is_some_and(|e| e != self.usb_apps_enabled);
 
-        if !has_changes && !led_changed && !apps_changed {
+        if !has_changes && !led_changed {
             log::info!("No changes detected");
             return;
         }
@@ -1100,7 +1085,7 @@ impl ConfigViewModel {
                 (self.led_status_colors[3], self.led_status_brightness[3]),
             ],
         });
-        let apps = apps_changed.then_some(self.usb_apps_enabled);
+        let apps = None;
 
         if method == DeviceMethod::Fido {
             if Self::status_supports_legacy_fido_config(status) || is_rskey {
@@ -1235,11 +1220,6 @@ impl ConfigViewModel {
                     self.led_status_brightness[4 + i] = brightness;
                 }
             }
-        }
-
-        if let Some(apps) = &device.management_apps {
-            self.usb_apps_supported = apps.usb_supported;
-            self.usb_apps_enabled = apps.usb_enabled;
         }
 
         self.enabled_usb_itf = config.and_then(|c| c.enabled_usb_itf);

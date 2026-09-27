@@ -194,7 +194,7 @@ impl AccountsViewModel {
 
     /// Re-fetch codes with the cached password (used by the ticker + after ops).
     fn reload(&mut self, cx: &mut Context<Self>) {
-        if self.loading {
+        if self.loading || self.gate(cx) != AppletGate::Ready {
             return;
         }
         self.loading = true;

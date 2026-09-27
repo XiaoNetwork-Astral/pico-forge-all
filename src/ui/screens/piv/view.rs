@@ -1,8 +1,10 @@
 //! PIV screen rendering.
 
+use crate::ui::components::application_switch;
 use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
+use crate::ui::models::device::USB_CAP_PIV;
 use crate::ui::models::device::piv;
 use crate::ui::screens::piv::view_model::PivViewModel;
 use gpui::*;
@@ -222,8 +224,14 @@ impl Render for PivViewModel {
 
         if let Some((heading, body)) = self.gate(cx).message() {
             let theme = cx.theme();
-            return PageView::build(TITLE, SUBTITLE, empty_state(heading, body, theme), theme)
-                .into_any_element();
+            return PageView::build_with_apps(
+                TITLE,
+                SUBTITLE,
+                empty_state(heading, body, theme),
+                theme,
+                application_switch::render(&self.device, &[USB_CAP_PIV], cx),
+            )
+            .into_any_element();
         }
 
         let info = self.info.clone();
@@ -463,6 +471,13 @@ impl Render for PivViewModel {
             .child(mgm_card)
             .child(reset_card);
 
-        PageView::build(TITLE, SUBTITLE, content, theme).into_any_element()
+        PageView::build_with_apps(
+            TITLE,
+            SUBTITLE,
+            content,
+            theme,
+            application_switch::render(&self.device, &[USB_CAP_PIV], cx),
+        )
+        .into_any_element()
     }
 }

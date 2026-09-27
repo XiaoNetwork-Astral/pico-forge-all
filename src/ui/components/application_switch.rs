@@ -1,8 +1,8 @@
 //! Feature switches shown on the page that uses them, including when disabled.
 use super::{card::Card, dialog, form::FormErrors};
 use crate::ui::models::device::{
-    DeviceMethod, DeviceRepo, USB_CAP_FIDO2, USB_CAP_OATH, USB_CAP_OPENPGP, USB_CAP_OTP,
-    USB_CAP_PIV, USB_CAP_U2F,
+    DeviceMethod, DeviceRepo, USB_CAP_FIDO2, USB_CAP_HSM, USB_CAP_OATH, USB_CAP_OPENPGP,
+    USB_CAP_OTP, USB_CAP_PIV, USB_CAP_U2F,
 };
 use gpui::*;
 use gpui_component::{
@@ -18,10 +18,13 @@ pub fn render(device: &Entity<DeviceRepo>, caps: &[u16], cx: &App) -> Option<Any
     let repo = device.read(cx);
     let apps = repo.management_apps.as_ref()?;
     let mut rows = v_flex().gap_4();
+    let mut visible = false;
     for &cap in caps {
-        if apps.usb_supported & cap == 0 {
+        let supported = apps.usb_supported & cap != 0;
+        if !supported && cap != USB_CAP_HSM {
             continue;
         }
+        visible = true;
         let (name, description) = match cap {
             USB_CAP_FIDO2 => ("FIDO2", "Passkeys and passwordless sign-in"),
             USB_CAP_U2F => ("U2F", "Legacy two-step security-key sign-in"),
@@ -29,6 +32,7 @@ pub fn render(device: &Entity<DeviceRepo>, caps: &[u16], cx: &App) -> Option<Any
             USB_CAP_OTP => ("OTP", "Button-triggered output from the configured slots"),
             USB_CAP_PIV => ("PIV", "Smart-card keys and certificates"),
             USB_CAP_OPENPGP => ("OpenPGP", "OpenPGP keys and card operations"),
+            USB_CAP_HSM => ("HSM", "SmartCard-HSM keys, certificates and objects"),
             _ => continue,
         };
         let device = device.clone();
@@ -42,20 +46,28 @@ pub fn render(device: &Entity<DeviceRepo>, caps: &[u16], cx: &App) -> Option<Any
                         div()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child(crate::i18n::tr(description)),
+                            .child(crate::i18n::tr(if supported {
+                                description
+                            } else {
+                                "Update firmware to enable or disable HSM."
+                            })),
                     ),
                 )
                 .child(
                     Switch::new(SharedString::from(format!("feature-{cap}")))
-                        .checked(apps.usb_enabled & cap != 0)
-                        .disabled(repo.loading || repo.applying_apps)
+                        .checked(if cap == USB_CAP_HSM && !supported {
+                            true
+                        } else {
+                            apps.usb_enabled & cap != 0
+                        })
+                        .disabled(!supported || repo.loading || repo.applying_apps)
                         .on_click(move |enabled, window, cx| {
                             open(&device, cap, *enabled, window, cx)
                         }),
                 ),
         );
     }
-    if !caps.iter().any(|cap| apps.usb_supported & cap != 0) {
+    if !visible {
         return None;
     }
     Some(

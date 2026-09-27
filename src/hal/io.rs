@@ -217,15 +217,18 @@ pub fn write_management_config(
     enabled_mask: u16,
     pin: Option<String>,
 ) -> Result<String, PFError> {
+    let supported = read_management_config(method.clone())?.usb_supported;
+    let hsm = (supported & rescue::constants::USB_CAP_HSM != 0)
+        .then_some(enabled_mask & rescue::constants::USB_CAP_HSM != 0);
     match method {
         DeviceMethod::Fido => {
             let pin = pin.ok_or_else(|| {
                 PFError::Device("PIN is required for FIDO management config write".into())
             })?;
             let transport = crate::hal::transport::fido::HidTransport::open()?;
-            fido::write_rskey_dev_config(&transport, enabled_mask, &pin)
+            fido::write_rskey_dev_config(&transport, enabled_mask, &pin, hsm)
         }
-        DeviceMethod::Rescue => rescue::write_management_config(enabled_mask),
+        DeviceMethod::Rescue => rescue::write_management_config(enabled_mask, hsm),
     }
 }
 

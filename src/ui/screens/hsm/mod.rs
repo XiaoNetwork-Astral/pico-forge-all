@@ -13,7 +13,7 @@ use crate::ui::components::{
     information,
     page_view::PageView,
 };
-use crate::ui::models::device::{DeviceEvent, DeviceRepo};
+use crate::ui::models::device::{DeviceEvent, DeviceRepo, USB_CAP_HSM};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{InputEvent, InputState};
@@ -40,7 +40,7 @@ enum Action {
 impl Action {
     fn title(self) -> &'static str {
         match self {
-            Self::Setup => crate::i18n::tr("Set up HSM"),
+            Self::Setup => crate::i18n::tr("Set PINs"),
             Self::Generate => crate::i18n::tr("Generate key"),
             Self::Delete => crate::i18n::tr("Delete key"),
             Self::Crypto => crate::i18n::tr("Use key"),
@@ -102,22 +102,11 @@ impl Action {
                     true,
                 ),
             ],
-            Self::Setup => vec![
-                (crate::i18n::tr("New user PIN (6–16 characters)"), true),
-                (crate::i18n::tr("New SO PIN (6–16 characters)"), true),
-                (
-                    crate::i18n::tr("DKEK shares (0 disables key backup)"),
-                    false,
-                ),
-            ],
-            Self::Initialize => Vec::new(),
+            Self::Setup | Self::Initialize => Vec::new(),
         }
     }
     fn description(self) -> &'static str {
         match self {
-            Self::Setup => crate::i18n::tr(
-                "Set a user PIN and an SO PIN for recovery. Leave DKEK shares at 0 to keep key backup disabled.",
-            ),
             Self::Initialize => crate::i18n::tr(
                 "Deletes all HSM keys and objects and sets new PINs. Other applications and hardware locks are preserved.",
             ),
@@ -174,6 +163,8 @@ pub struct HsmViewModel {
     object_scroll: UniformListScrollHandle,
     key_search: Entity<InputState>,
     object_search: Entity<InputState>,
+    setup_inputs: [Entity<InputState>; 3],
+    setup_errors: FormErrors,
     _task: Option<Task<()>>,
 }
 impl HsmViewModel {
@@ -189,15 +180,35 @@ impl HsmViewModel {
                 .detach();
         }
         let device = models.device.clone();
-        cx.subscribe(&device, |this: &mut Self, _, _: &DeviceEvent, cx| {
-            if this.device.read(cx).device_changed {
-                this.info = None;
-                this.loaded = false;
-            }
-            if !this.loaded {
-                this.load(cx);
-            }
-        })
+        let setup_inputs = std::array::from_fn(|index| {
+            cx.new(|cx| {
+                InputState::new(window, cx)
+                    .masked(index < 2)
+                    .default_value(if index == 2 { "0" } else { "" })
+            })
+        });
+        let setup_errors = FormErrors::default();
+        for (index, input) in setup_inputs.iter().enumerate() {
+            setup_errors.watch(index, input, window, cx);
+        }
+        cx.subscribe_in(
+            &device,
+            window,
+            |this: &mut Self, _, _: &DeviceEvent, window, cx| {
+                if this.device.read(cx).device_changed {
+                    this.info = None;
+                    this.loaded = false;
+                    this.clear_setup(window, cx);
+                }
+                if !this.available(cx) {
+                    this.loaded = false;
+                }
+                if !this.loaded {
+                    this.load(cx);
+                }
+                cx.notify();
+            },
+        )
         .detach();
         let mut this = Self {
             device,
@@ -211,6 +222,8 @@ impl HsmViewModel {
             object_scroll: UniformListScrollHandle::new(),
             key_search,
             object_search,
+            setup_inputs,
+            setup_errors,
             _task: None,
         };
         this.load(cx);
@@ -226,12 +239,104 @@ impl HsmViewModel {
             AppletGate::Unsupported
         } else if !device.ccid_on() {
             AppletGate::CcidOff
+        } else if device.management_apps.as_ref().is_some_and(|apps| {
+            apps.usb_supported & USB_CAP_HSM != 0 && apps.usb_enabled & USB_CAP_HSM == 0
+        }) {
+            AppletGate::Disabled("HSM")
         } else {
             AppletGate::Ready
         }
     }
     fn available(&self, cx: &App) -> bool {
         self.gate(cx) == AppletGate::Ready
+    }
+    fn uninitialized(&self) -> bool {
+        self.info
+            .as_ref()
+            .is_some_and(|info| info.initialized == Some(false))
+    }
+
+    fn clear_setup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for (index, input) in self.setup_inputs.iter().enumerate() {
+            input.update(cx, |input, cx| {
+                input.set_value(if index == 2 { "0" } else { "" }, window, cx)
+            });
+        }
+        self.setup_errors.clear();
+    }
+
+    fn save_initial_pins(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.loading || !self.uninitialized() || !self.available(cx) {
+            return;
+        }
+        let args: Vec<_> = self
+            .setup_inputs
+            .iter()
+            .map(|input| input.read(cx).text().to_string())
+            .collect();
+        self.setup_errors.clear();
+        for (index, value) in args[..2].iter().enumerate() {
+            if let Err(error) = hsm::validate_pin(value.as_bytes()) {
+                self.setup_errors
+                    .set(index, crate::i18n::text(error.to_string()));
+            }
+        }
+        if !args[2]
+            .trim()
+            .parse::<u8>()
+            .is_ok_and(|shares| shares <= 16)
+        {
+            self.setup_errors
+                .set(2, crate::i18n::tr("Enter a DKEK share count from 0 to 16"));
+        }
+        if !self.setup_errors.valid(window) {
+            return;
+        }
+        self.clear_setup(window, cx);
+        let status = dialog::open_status_dialog(crate::i18n::tr("Set PINs"), window, cx);
+        self.run(Action::Setup, args, 0, status, cx);
+    }
+
+    fn pin_card(&self, cx: &mut Context<Self>) -> Card {
+        let card = Card::new()
+            .title("PIN")
+            .icon(Icon::default().path("icons/lock.svg"));
+        if self.uninitialized() {
+            let labels = [
+                "New user PIN (6–16 bytes)",
+                "New SO PIN (6–16 bytes)",
+                "DKEK shares (0 disables key backup)",
+            ];
+            let mut fields = v_flex().gap_3();
+            for (index, label) in labels.iter().enumerate() {
+                fields = fields.child(self.setup_errors.field(
+                    index,
+                    crate::i18n::tr(label),
+                    &self.setup_inputs[index],
+                    true,
+                ));
+            }
+            return card.child(fields).child(
+                standard("hsm-set-pins", cx)
+                    .label(crate::i18n::tr("Set PINs"))
+                    .disabled(self.loading)
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.save_initial_pins(window, cx)),
+                    ),
+            );
+        }
+        card.child(self.action_row(
+            crate::i18n::tr("User PIN"),
+            crate::i18n::tr("Authorizes private key operations and protected objects."),
+            &[Action::Pin],
+            cx,
+        ))
+        .child(self.action_row(
+            crate::i18n::tr("Security officer PIN"),
+            crate::i18n::tr("Authorizes user PIN recovery."),
+            &[Action::SoPin, Action::Unblock],
+            cx,
+        ))
     }
     fn load(&mut self, cx: &mut Context<Self>) {
         if self.loading || !self.available(cx) {
@@ -277,13 +382,9 @@ impl HsmViewModel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self
-            .info
-            .as_ref()
-            .is_some_and(|i| i.initialized == Some(false))
-            && !matches!(action, Action::Setup | Action::Initialize | Action::Read)
+        if matches!(action, Action::Setup)
+            || (self.uninitialized() && !matches!(action, Action::Initialize | Action::Read))
         {
-            self.open_action(Action::Setup, window, cx);
             return;
         }
         if matches!(action, Action::Write) {
@@ -307,18 +408,6 @@ impl HsmViewModel {
             fields[0].1.update(cx, |input, cx| {
                 input.set_value(default.initial_value(), window, cx)
             });
-        }
-        if matches!(action, Action::Setup) {
-            for (index, value) in [(0, "123456"), (1, "12345678")] {
-                fields[index]
-                    .1
-                    .update(cx, |input, cx| input.set_value(value, window, cx));
-            }
-        }
-        if matches!(action, Action::Setup | Action::Initialize) {
-            fields[2]
-                .1
-                .update(cx, |input, cx| input.set_value("0", window, cx));
         }
         if let Some(id) = id {
             fields[1].1.update(cx, |input, cx| {
@@ -699,7 +788,7 @@ impl HsmViewModel {
                     cx,
                 )
                 .label(action.title())
-                .disabled(self.loading || self.info.is_none())
+                .disabled(self.loading || self.info.is_none() || self.uninitialized())
                 .on_click(cx.listener(move |this, _, w, cx| this.open_action(action, w, cx))),
             )
             .child(
@@ -804,7 +893,11 @@ impl HsmViewModel {
         for &action in actions {
             let button = standard(SharedString::from(action.title()), cx)
                 .label(action.title())
-                .disabled(self.loading || self.info.is_none())
+                .disabled(
+                    self.loading
+                        || self.info.is_none()
+                        || (self.uninitialized() && !matches!(action, Action::Initialize)),
+                )
                 .on_click(cx.listener(move |this, _, w, cx| this.open_action(action, w, cx)));
             buttons = buttons.child(if matches!(action, Action::Initialize) {
                 button.danger()
@@ -922,27 +1015,9 @@ impl Render for HsmViewModel {
                     .child(details),
             );
             body = body
+                .child(self.pin_card(cx))
                 .child(self.stored_list(true, cx))
                 .child(self.stored_list(false, cx))
-                .child(
-                    Card::new()
-                        .title("PIN")
-                        .icon(Icon::default().path("icons/lock.svg"))
-                        .child(self.action_row(
-                            crate::i18n::tr("User PIN"),
-                            crate::i18n::tr(
-                                "Authorizes private key operations and protected objects.",
-                            ),
-                            &[Action::Pin],
-                            cx,
-                        ))
-                        .child(self.action_row(
-                            crate::i18n::tr("Security officer PIN"),
-                            crate::i18n::tr("Authorizes user PIN recovery."),
-                            &[Action::SoPin, Action::Unblock],
-                            cx,
-                        )),
-                )
                 .child(
                     Card::new()
                         .title(crate::i18n::tr("Key backup"))
@@ -979,11 +1054,12 @@ impl Render for HsmViewModel {
                         )),
                 );
         }
-        PageView::build(
+        PageView::build_with_apps(
             "HSM",
             crate::i18n::tr("Manage SmartCard-HSM keys, certificates and PINs."),
             body,
             cx.theme(),
+            crate::ui::components::application_switch::render(&self.device, &[USB_CAP_HSM], cx),
         )
     }
 }

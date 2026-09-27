@@ -2135,7 +2135,6 @@ pub(crate) fn write_rskey_led_config(
 // ── RS-Key FIDO Management / DEV_CONF (CONFIG_WRITE target 0x00) ────────
 
 /// MGMT TLV tag for USB enabled interfaces.
-const FIDO_MGMT_TAG_USB_ENABLED: u8 = 0x03;
 
 /// Write the USB application enabled-mask to an RS-Key over FIDO.
 ///
@@ -2149,13 +2148,9 @@ pub(crate) fn write_rskey_dev_config(
     transport: &HidTransport,
     enabled_mask: u16,
     pin: &str,
+    hsm: Option<bool>,
 ) -> Result<String, PFError> {
-    let tlv = [
-        FIDO_MGMT_TAG_USB_ENABLED,
-        0x02,
-        (enabled_mask >> 8) as u8,
-        (enabled_mask & 0xFF) as u8,
-    ];
+    let tlv = crate::hal::rescue::constants::management_config_tlv(enabled_mask, hsm);
 
     let pin_token = transport.get_pin_token_with_permission(
         pin,

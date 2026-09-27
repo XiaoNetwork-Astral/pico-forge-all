@@ -731,3 +731,31 @@ pub const USB_CAP_OATH: u16 = 0x0020;
 
 /// USB capability: FIDO2/CTAP2 interface.
 pub const USB_CAP_FIDO2: u16 = 0x0200;
+
+/// Pico All SmartCard-HSM capability (distinct from YubiHSM Auth).
+pub const USB_CAP_HSM: u16 = 0x4000;
+
+pub fn management_config_tlv(enabled: u16, hsm: Option<bool>) -> Vec<u8> {
+    let mut data = vec![MGMT_TAG_USB_ENABLED, 2, (enabled >> 8) as u8, enabled as u8];
+    if let Some(enabled) = hsm {
+        data.extend_from_slice(&[0x80, 1, u8::from(enabled)]);
+    }
+    data
+}
+
+#[cfg(test)]
+mod management_config_tests {
+    #[test]
+    fn hsm_state_is_explicit_only_for_supported_firmware() {
+        use super::*;
+        assert_eq!(management_config_tlv(0x220, None), [3, 2, 2, 0x20]);
+        assert_eq!(
+            management_config_tlv(0x4220, Some(true)),
+            [3, 2, 0x42, 0x20, 0x80, 1, 1]
+        );
+        assert_eq!(
+            management_config_tlv(0x220, Some(false)),
+            [3, 2, 2, 0x20, 0x80, 1, 0]
+        );
+    }
+}

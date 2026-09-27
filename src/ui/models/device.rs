@@ -35,7 +35,8 @@ pub use crate::hal::fido::backup;
 pub use crate::hal::io::MgmAuth;
 pub use crate::hal::offboard::OffboardReport;
 pub use crate::hal::rescue::constants::{
-    LedColor, USB_CAP_FIDO2, USB_CAP_OATH, USB_CAP_OPENPGP, USB_CAP_OTP, USB_CAP_PIV, USB_CAP_U2F,
+    LedColor, USB_CAP_FIDO2, USB_CAP_HSM, USB_CAP_OATH, USB_CAP_OPENPGP, USB_CAP_OTP, USB_CAP_PIV,
+    USB_CAP_U2F,
 };
 pub use types::{
     AppConfigInput, DeviceMethod, FidoDeviceInfo, FirmwareType, FullDeviceStatus, LedStatusConfig,

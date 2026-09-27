@@ -191,7 +191,11 @@ pub trait RescueOperations {
     /// Read USB interface configuration from the Management applet (RS-Key only).
     fn read_management_config(&self) -> Result<ManagementAppConfig, PFError>;
     /// Write USB interface enable mask to the Management applet (RS-Key only).
-    fn write_management_config(&self, enabled_mask: u16) -> Result<String, PFError>;
+    fn write_management_config(
+        &self,
+        enabled_mask: u16,
+        hsm: Option<bool>,
+    ) -> Result<String, PFError>;
 }
 
 impl RescueOperations for PcscTransport {
@@ -900,15 +904,14 @@ impl RescueOperations for PcscTransport {
     /// Overwrites the previously enabled interfaces with a new configuration bitmask.
     /// For the changes to fully apply across all composite USB endpoints, a subsequent
     /// device reboot or re-plug is required.
-    fn write_management_config(&self, enabled_mask: u16) -> Result<String, PFError> {
+    fn write_management_config(
+        &self,
+        enabled_mask: u16,
+        hsm: Option<bool>,
+    ) -> Result<String, PFError> {
         log::info!("Writing management config: enabled=0x{:04X}", enabled_mask);
 
-        let inner = [
-            MGMT_TAG_USB_ENABLED,
-            0x02,
-            (enabled_mask >> 8) as u8,
-            (enabled_mask & 0xFF) as u8,
-        ];
+        let inner = management_config_tlv(enabled_mask, hsm);
 
         let mut apdu = vec![
             APDU_CLA_ISO,

@@ -55,8 +55,9 @@ pub fn read_management_config() -> Result<ManagementAppConfig, PFError> {
 }
 
 /// Write USB interface enable mask to the Management applet (RS-Key only).
-pub fn write_management_config(enabled_mask: u16) -> Result<String, PFError> {
-    PcscTransport::open_with_aid(constants::MANAGEMENT_AID)?.write_management_config(enabled_mask)
+pub fn write_management_config(enabled_mask: u16, hsm: Option<bool>) -> Result<String, PFError> {
+    PcscTransport::open_with_aid(constants::MANAGEMENT_AID)?
+        .write_management_config(enabled_mask, hsm)
 }
 
 /// Latched RP2350 security state; this query returns no root key material.

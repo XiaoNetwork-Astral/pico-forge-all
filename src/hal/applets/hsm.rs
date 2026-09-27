@@ -143,7 +143,7 @@ pub fn read_info() -> Result<HsmInfo, PFError> {
         files: list_files(&s)?,
     })
 }
-fn validate_pin(pin: &[u8]) -> Result<(), PFError> {
+pub fn validate_pin(pin: &[u8]) -> Result<(), PFError> {
     if !(6..=16).contains(&pin.len()) {
         return Err(error("PIN must contain 6 to 16 bytes"));
     }
